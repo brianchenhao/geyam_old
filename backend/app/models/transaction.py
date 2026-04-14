@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, Numeric, String, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
@@ -15,6 +17,11 @@ class Transaction(Base):
     total: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
     payment: Mapped[str] = mapped_column(String(20), default="cash")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    items: Mapped[list["TransactionItem"]] = relationship(
+        back_populates="transaction",
+        cascade="all, delete-orphan",
+    )
 
 
 class TransactionItem(Base):
@@ -30,3 +37,5 @@ class TransactionItem(Base):
     quantity: Mapped[int] = mapped_column(Integer, default=1)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    transaction: Mapped["Transaction"] = relationship(back_populates="items")
