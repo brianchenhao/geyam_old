@@ -28,5 +28,9 @@ Thumbs.db
 
 # ML / data (big files shouldn't go in git)
 backend/ml_models/*.pt
+backend/ml_models/runs/
 backend/training_data/images/
 backend/training_data/labels/
+backend/training_data/_tmp/
+backend/training_data/data.yaml
+backend/*.pt
