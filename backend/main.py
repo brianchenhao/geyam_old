@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.database import init_db
-from app.routers import detect, menu, train, transaction
+from app.routers import ask, detect, forecast, menu, train, transaction
 from app.services import yolo_service
 
 
@@ -23,6 +23,8 @@ app.include_router(train.router)
 app.include_router(menu.router)
 app.include_router(detect.router)
 app.include_router(transaction.router)
+app.include_router(forecast.router)
+app.include_router(ask.router)
 
 
 @app.get("/health")
