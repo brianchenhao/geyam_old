@@ -45,6 +45,7 @@ async def detect(image: UploadFile = File(...), conf: float = 0.25):
         price = float(mi.price)
         detections.append(
             {
+                "menu_item_id": mi.id,
                 "name": mi.name,
                 "price": price,
                 "confidence": round(d["confidence"], 3),
