@@ -117,9 +117,38 @@ Server runs YOLO → detects:
   - 100Plus       (0.91) → RM2.20
          │
          ▼
+Validation layer: reject result if any item appears >3 times
+  - passes → return YOLO result (source: "yolo")
+  - fails  → fall back to GPT-4o vision, constrained to the menu
+             → return vision result (source: "openai")
+         │
+         ▼
 Cart shown on phone → staff confirms → transaction saved
 Total: RM7.70
 ```
+
+### Detect Validation + Vision Fallback
+
+YOLO on a small/early dataset can hallucinate duplicate detections (e.g.
+"14 cans of Milo" on a tray holding one). The detect endpoint guards
+against this with a simple heuristic:
+
+1. YOLO runs first on the uploaded image.
+2. Count detections per label. If `max_count > 3`, the result is
+   considered implausible.
+3. Fall back to OpenAI GPT-4o vision with a prompt constrained to the
+   current `menu_items` list, asking for `{items: [{label, quantity}]}`.
+4. Parse and match labels back to `menu_items`. Each quantity is
+   expanded into N entries so the existing response shape + total
+   calculation stays the same.
+5. Response includes a `source` field: `"yolo"` or `"openai"`. If vision
+   itself errors, the original YOLO result is returned with a `warning`
+   field so the client can still function.
+
+`OPENAI_API_KEY` lives in `backend/.env` and is loaded via
+`python-dotenv` at the top of `main.py` before any `app.*` modules read
+env vars. It is never hardcoded. Model defaults to `gpt-4o` but can be
+overridden with `OPENAI_VISION_MODEL`.
 
 ---
 
@@ -356,6 +385,9 @@ PHASE 3 — Detection works
   14. Accepts image, runs YOLO inference
   15. Matches detections to menu_items by label
   16. Returns item names + prices + confidence
+  16a. Validation layer: if YOLO reports >3 of any single item,
+       fall back to GPT-4o vision constrained to the menu.
+       Key loaded from backend/.env via python-dotenv.
 
 PHASE 4 — Transactions + sales
 ──────────────────────────────────────────────

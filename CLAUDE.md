@@ -8,10 +8,11 @@ a video of the item with a name and price.
 ## Tech Stack
 - Backend: Python FastAPI
 - Database: PostgreSQL (Docker)
-- AI: YOLOv8 (ultralytics), local LLM (Ollama)
+- AI: YOLOv8 (ultralytics), local LLM (Ollama), OpenAI GPT-4o vision (fallback)
 - Frontend: Flutter (mobile for staff POS, web for manager dashboard)
 - Hosting: geyam.com (Hostinger) for frontend, laptop runs backend
 - Tunnel: Cloudflare Tunnel exposes localhost:8000 as api.geyam.com
+- Secrets: backend/.env (loaded via python-dotenv); OPENAI_API_KEY lives here
 
 ## Architecture
 - Flutter mobile = camera + display only, sends image to server
@@ -19,14 +20,18 @@ a video of the item with a name and price.
 - PostgreSQL = users, menu_items, transactions, model_versions
 
 ## Key Endpoints
-- POST /detect — upload tray image, get detected items + prices
+- POST /detect — upload tray image, get detected items + prices.
+  YOLO runs first. If any single item is counted more than 3 times,
+  the result is flagged "not logical" and the endpoint falls back to
+  OpenAI GPT-4o vision constrained to the menu. Response includes a
+  `source` field (`"yolo"` or `"openai"`).
 - POST /train/video — upload video + name + price, system learns product
 - POST /transaction — save a sale
 - GET /sales — sales history
 - POST /ask — ask LLM about sales data
 
 ## Current Phase
-Phase 1 — getting FastAPI + PostgreSQL running
+C:\Programming (Local)\FYP Claude\geyam\docs\PLAN.md the whole plan of the project is in this folder
 
 ## Commands
 - Start DB: docker-compose up -d db

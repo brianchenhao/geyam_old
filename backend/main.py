@@ -1,5 +1,9 @@
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
+
+load_dotenv()  # reads backend/.env; must run before app.* modules read env
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -20,13 +24,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="GEYAM API", lifespan=lifespan)
 
+# This laptop serves both the public site (geyam.com via Cloudflare tunnel)
+# and local dev (Flutter web on any localhost port), so allow both at once.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://geyam.com",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
+        "https://www.geyam.com",
     ],
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
