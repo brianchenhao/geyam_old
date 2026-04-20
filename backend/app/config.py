@@ -5,7 +5,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent  # backend/
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+asyncpg://pos_user:pos_pass@localhost:5432/geyam",
+    "postgresql+asyncpg://pos_user:pos_pass@localhost:5433/geyam",
 )
 
 MODEL_DIR = Path(os.getenv("MODEL_DIR", str(BASE_DIR / "ml_models")))

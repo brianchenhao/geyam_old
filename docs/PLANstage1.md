@@ -39,7 +39,7 @@ A POS system for selling **packaged food only** (canned drinks, snack packets, b
      │  └──────────────┘  └──────────────┘  │
      │                                      │
      │  Exposed via Cloudflare Tunnel       │
-     │  e.g. api.geyam.com → localhost:8000 │
+     │  e.g. api.geyam.com → localhost:9000 │
      └──────────────────────────────────────┘
 ```
 
@@ -66,11 +66,11 @@ cloudflared tunnel create geyam
 # Route to your subdomain
 cloudflared tunnel route dns geyam api.geyam.com
 
-# Run it (points api.geyam.com → localhost:8000)
-cloudflared tunnel --url http://localhost:8000 run geyam
+# Run it (points api.geyam.com → localhost:9000)
+cloudflared tunnel --url http://localhost:9000 run geyam
 ```
 
-In Cloudflare DNS, `api.geyam.com` will point to the tunnel. Your FastAPI runs on `localhost:8000`, Cloudflare handles HTTPS.
+In Cloudflare DNS, `api.geyam.com` will point to the tunnel. Your FastAPI runs on `localhost:9000`, Cloudflare handles HTTPS.
 
 ---
 
@@ -322,7 +322,7 @@ services:
   backend:
     build: ./backend
     ports:
-      - "8000:8000"
+      - "9000:9000"
     depends_on:
       - db
     environment:

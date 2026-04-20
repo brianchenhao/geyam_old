@@ -11,7 +11,7 @@ a video of the item with a name and price.
 - AI: YOLOv8 (ultralytics), local LLM (Ollama), OpenAI GPT-4o vision (fallback)
 - Frontend: Flutter (mobile for staff POS, web for manager dashboard)
 - Hosting: geyam.com (Hostinger) for frontend, laptop runs backend
-- Tunnel: Cloudflare Tunnel exposes localhost:8000 as api.geyam.com
+- Tunnel: Cloudflare Tunnel exposes localhost:8500 as api.geyam.com
 - Secrets: backend/.env (loaded via python-dotenv); OPENAI_API_KEY lives here
 
 ## Architecture
@@ -35,8 +35,8 @@ C:\Programming (Local)\FYP Claude\geyam\docs\PLAN.md the whole plan of the proje
 
 ## Commands
 - Start DB: docker-compose up -d db
-- Start server: uvicorn main:app --reload --host 0.0.0.0 --port 8000
-- Test: curl http://localhost:8000/health
+- Start server: uvicorn main:app --reload --host 0.0.0.0 --port 8500
+- Test: curl http://localhost:8500/health
 
 ## Rules
 - Test every endpoint with curl before building UI
