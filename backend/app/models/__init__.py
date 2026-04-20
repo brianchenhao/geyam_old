@@ -2,6 +2,7 @@
 are parked — they will be re-landed tenant-scoped in later phases."""
 from app.models.audit_log import AuditLog
 from app.models.tenant import Tenant
+from app.models.tenant_settings import TenantSettings
 from app.models.user import User
 
-__all__ = ["Tenant", "User", "AuditLog"]
+__all__ = ["Tenant", "User", "AuditLog", "TenantSettings"]
