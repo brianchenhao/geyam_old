@@ -43,9 +43,13 @@ app.add_middleware(
 )
 
 from app.routers import admin as admin_router  # noqa: E402
+from app.routers import auth as auth_router  # noqa: E402
+from app.routers import users as users_router  # noqa: E402
 app.include_router(admin_router.router)
+app.include_router(auth_router.router)
+app.include_router(users_router.router)
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "phase": "2", "stage": 2}
+    return {"status": "ok", "phase": "3", "stage": 2}
