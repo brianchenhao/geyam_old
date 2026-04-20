@@ -5,6 +5,7 @@ import '../config/theme.dart';
 import '../services/api_service.dart';
 import 'dashboard_screen.dart';
 import 'pos_screen.dart';
+import 'tenant_picker_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -31,7 +32,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       final r = await ApiService.post('/admin/dev-login', body: {'email': _adminEmail.text.trim()});
       ApiService.setAuth(token: r['token'] as String, role: 'admin');
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const DashboardScreen()));
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const TenantPickerScreen()));
     } on ApiException catch (e) {
       setState(() => _error = e.message);
     } finally {

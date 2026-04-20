@@ -8,7 +8,8 @@ from app.config import ADMIN_EMAILS
 from app.deps import bypass_tenant_scope, get_session, require_admin
 from app.models.tenant import Tenant
 from app.models.user import User
-from app.security import issue_admin_token
+from app.security import issue_access_token, issue_admin_token
+from app.services.audit import audit
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -48,6 +49,30 @@ async def list_tenants(session: AsyncSession = Depends(get_session)) -> list[Ten
     async with bypass_tenant_scope():
         res = await session.execute(select(Tenant).order_by(Tenant.id))
     return [TenantOut.model_validate(t) for t in res.scalars().all()]
+
+
+@router.post("/tenants/{tenant_id}/impersonate", dependencies=[Depends(require_admin)])
+async def impersonate(tenant_id: int, admin: dict = Depends(require_admin),
+                       session: AsyncSession = Depends(get_session)) -> dict:
+    """Mint an owner-scoped JWT for the given tenant. Admin-only; every call audited."""
+    async with bypass_tenant_scope():
+        t = (await session.execute(select(Tenant).where(Tenant.id == tenant_id))).scalars().first()
+        if not t:
+            raise HTTPException(status_code=404, detail="tenant not found")
+        owner = (await session.execute(
+            select(User).where(User.tenant_id == t.id, User.role == "owner")
+        )).scalars().first()
+        if not owner:
+            raise HTTPException(status_code=404, detail="tenant has no owner user row")
+        await audit(session, action="admin.impersonate", tenant_id=t.id, user_id=owner.id,
+                    meta={"admin_email": admin.get("email")})
+        await session.commit()
+    return {
+        "access_token": issue_access_token(tenant_id=t.id, user_id=owner.id, role="owner"),
+        "tenant_id": t.id,
+        "tenant_handle": t.handle,
+        "role": "owner",
+    }
 
 
 @router.post("/tenants", dependencies=[Depends(require_admin)])
