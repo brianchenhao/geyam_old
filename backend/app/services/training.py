@@ -1,253 +1,177 @@
-"""Video → YOLO training pipeline.
+"""Phase 6 training service (runs in the RQ worker).
 
-Flow per upload:
-  1. Extract frames with ffmpeg (2 fps)
-  2. 80/20 split into training_data/images/{train,val}/
-  3. Write YOLO label .txt files (centered bbox, single class per frame)
-  4. Append new class to training_data/data.yaml
-  5. Fine-tune YOLOv8 from last best.pt (or yolov8n.pt if none)
-  6. Copy resulting best.pt to ml_models/best_v{N}.pt
-  7. Insert MenuItem + ModelVersion rows (new version = is_active, previous deactivated)
-
-All heavy work runs inside asyncio.to_thread so the FastAPI event loop stays
-responsive while training is in progress.
+Flow:
+  1. Mark all queued jobs for this tenant as 'training'.
+  2. For each job: extract fps=2 frames and write auto-labels (centered 0.8x0.8).
+  3. Run YOLO fine-tune if TRAIN_MODE='real', else copy baseline weights (stub).
+  4. Record a new model_versions row (is_active=True, previous → is_active=False).
+  5. Release tenant_settings.training_locked_at.
+  6. On any exception: mark remaining jobs 'failed', release the lock, keep the
+     old active model unchanged.
 """
-from __future__ import annotations
-
-import asyncio
-import logging
-import re
+import os
 import shutil
-import subprocess
+import traceback
+from datetime import datetime
 from pathlib import Path
 
-import yaml
-from sqlalchemy import update
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session, sessionmaker
 
-from app.config import MODEL_DIR, TRAINING_DATA_DIR
-from app.database import SessionLocal
+from app.config import BASE_DIR
 from app.models.menu_item import MenuItem
 from app.models.model_version import ModelVersion
-from app.services import yolo_service
-
-logger = logging.getLogger(__name__)
-
-FPS = 2
-EPOCHS = 30
-IMG_SIZE = 640
-TRAIN_VAL_SPLIT = 0.8
+from app.models.tenant_settings import TenantSettings
+from app.models.training_job import TrainingJob
+from app.services.video_frames import extract_frames_at_fps
 
 
-def slugify(name: str) -> str:
-    s = name.lower().strip()
-    s = re.sub(r"[^a-z0-9]+", "_", s)
-    return s.strip("_")[:50]
+def _yaml_escape(s: str) -> str:
+    return s.replace("'", "''")
 
 
-# ---------- sync helpers (run inside to_thread) ----------
-
-def _extract_frames(video_path: Path, out_dir: Path, label: str) -> list[Path]:
-    import imageio_ffmpeg
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    pattern = str(out_dir / f"{label}_%04d.jpg")
-    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-    cmd = [
-        ffmpeg_exe,
-        "-y",
-        "-i",
-        str(video_path),
-        "-vf",
-        f"fps={FPS}",
-        "-q:v",
-        "2",
-        pattern,
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"ffmpeg failed: {result.stderr[-400:]}")
-    return sorted(out_dir.glob(f"{label}_*.jpg"))
+def _sync_sessionmaker():
+    sync_url = os.environ.get("ALEMBIC_DATABASE_URL") or \
+        os.environ["DATABASE_URL"].replace("postgresql+asyncpg", "postgresql+psycopg")
+    engine = create_engine(sync_url, future=True)
+    return sessionmaker(bind=engine, expire_on_commit=False)
 
 
-def _split_frames(
-    frames: list[Path], label: str
-) -> tuple[list[Path], list[Path]]:
-    train_dir = TRAINING_DATA_DIR / "images" / "train"
-    val_dir = TRAINING_DATA_DIR / "images" / "val"
-    train_dir.mkdir(parents=True, exist_ok=True)
-    val_dir.mkdir(parents=True, exist_ok=True)
-
-    split_idx = max(1, int(len(frames) * TRAIN_VAL_SPLIT))
-    train_src = frames[:split_idx]
-    val_src = frames[split_idx:] or frames[-1:]  # guarantee at least 1 val frame
-
-    moved_train: list[Path] = []
-    moved_val: list[Path] = []
-    for f in train_src:
-        dest = train_dir / f.name
-        shutil.move(str(f), str(dest))
-        moved_train.append(dest)
-    for f in val_src:
-        dest = val_dir / f.name
-        if dest.exists():
-            continue
-        shutil.move(str(f), str(dest))
-        moved_val.append(dest)
-    return moved_train, moved_val
+def _release_lock(session: Session, tenant_id: int) -> None:
+    ts = session.execute(select(TenantSettings).where(TenantSettings.tenant_id == tenant_id)).scalars().first()
+    if ts is not None:
+        ts.training_locked_at = None
 
 
-def _write_labels(frames: list[Path], split: str, class_id: int) -> None:
-    label_dir = TRAINING_DATA_DIR / "labels" / split
-    label_dir.mkdir(parents=True, exist_ok=True)
-    for f in frames:
-        label_file = label_dir / (f.stem + ".txt")
-        label_file.write_text(f"{class_id} 0.5 0.5 0.8 0.8\n")
+def run_batch(tenant_id: int) -> dict:
+    """Entry point called by the RQ worker."""
+    Maker = _sync_sessionmaker()
 
+    training_data_root = Path(os.environ.get("TRAINING_DATA_DIR", str(BASE_DIR / "training_data"))) / str(tenant_id)
+    model_out_dir = Path(os.environ.get("MODEL_DIR", str(BASE_DIR / "ml_models"))) / str(tenant_id)
+    model_out_dir.mkdir(parents=True, exist_ok=True)
+    model_out_path = model_out_dir / "best.pt"
 
-def _update_data_yaml(label: str, class_id: int) -> Path:
-    yaml_path = TRAINING_DATA_DIR / "data.yaml"
-    if yaml_path.exists():
-        data = yaml.safe_load(yaml_path.read_text()) or {}
-    else:
-        data = {}
-    data["path"] = str(TRAINING_DATA_DIR.resolve())
-    data["train"] = "images/train"
-    data["val"] = "images/val"
-    names = data.get("names") or {}
-    names = {int(k): v for k, v in names.items()}
-    names[class_id] = label
-    data["names"] = names
-    yaml_path.write_text(yaml.safe_dump(data, sort_keys=False))
-    return yaml_path
+    results = {"frames": 0, "jobs": [], "failed": False, "error": None}
 
+    with Maker() as s:
+        queued = s.execute(
+            select(TrainingJob).where(TrainingJob.tenant_id == tenant_id,
+                                       TrainingJob.status == "queued")
+        ).scalars().all()
+        for j in queued:
+            j.status = "training"
+            j.started_at = datetime.utcnow()
+        s.commit()
 
-def _next_class_id() -> int:
-    yaml_path = TRAINING_DATA_DIR / "data.yaml"
-    if not yaml_path.exists():
-        return 0
-    data = yaml.safe_load(yaml_path.read_text()) or {}
-    names = data.get("names") or {}
-    if not names:
-        return 0
-    return max(int(k) for k in names.keys()) + 1
+        if not queued:
+            _release_lock(s, tenant_id); s.commit()
+            results["error"] = "no queued jobs"
+            return results
 
-
-def _next_version() -> int:
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    versions: list[int] = []
-    for p in MODEL_DIR.glob("best_v*.pt"):
         try:
-            versions.append(int(p.stem.split("_v")[-1]))
-        except ValueError:
-            pass
-    return (max(versions) + 1) if versions else 1
+            items_by_label: dict[str, MenuItem] = {}
+            item_by_id: dict[int, MenuItem] = {}
+            for j in queued:
+                if j.menu_item_id is None:
+                    continue
+                item = s.execute(select(MenuItem).where(MenuItem.id == j.menu_item_id)).scalars().first()
+                if item is None:
+                    continue
+                items_by_label.setdefault(item.label, item)
+                item_by_id[item.id] = item
 
+            class_names = sorted(items_by_label.keys())
+            class_idx = {n: i for i, n in enumerate(class_names)}
 
-def _base_weights() -> str:
-    latest = yolo_service.find_latest_weights()
-    return str(latest) if latest else "yolov8n.pt"
+            images_dir = training_data_root / "images"
+            labels_dir = training_data_root / "labels"
+            images_dir.mkdir(parents=True, exist_ok=True)
+            labels_dir.mkdir(parents=True, exist_ok=True)
 
+            total_frames = 0
+            for j in queued:
+                item = item_by_id.get(j.menu_item_id)
+                if item is None:
+                    j.status = "failed"; j.error = "menu_item not found"; j.finished_at = datetime.utcnow()
+                    continue
 
-def _train_yolo(data_yaml: Path, version: int) -> tuple[Path, float | None]:
-    from ultralytics import YOLO  # lazy import — ~2s
+                per_video_dir = images_dir / f"job_{j.id}"
+                n = extract_frames_at_fps(j.video_path, per_video_dir, fps=2, prefix=f"j{j.id}")
+                j.frames_extracted = n
+                total_frames += n
 
-    model = YOLO(_base_weights())
-    run_name = f"train_v{version}"
-    results = model.train(
-        data=str(data_yaml),
-        epochs=EPOCHS,
-        imgsz=IMG_SIZE,
-        project=str(MODEL_DIR / "runs"),
-        name=run_name,
-        exist_ok=True,
-    )
-    src = MODEL_DIR / "runs" / run_name / "weights" / "best.pt"
-    dest = MODEL_DIR / f"best_v{version}.pt"
-    shutil.copy(str(src), str(dest))
+                cls = class_idx[item.label]
+                for img in list(per_video_dir.glob("j*.jpg")):
+                    target_img = images_dir / img.name
+                    try:
+                        shutil.move(str(img), str(target_img))
+                    except Exception:
+                        pass
+                    label_path = labels_dir / (target_img.stem + ".txt")
+                    label_path.write_text(f"{cls} 0.5 0.5 0.8 0.8\n", encoding="utf-8")
 
-    accuracy: float | None = None
-    try:
-        accuracy = float(results.box.map50)  # type: ignore[attr-defined]
-    except Exception:
-        pass
-    return dest, accuracy
+            results["frames"] = total_frames
 
-
-def _do_training_sync(
-    video_path: Path, label: str
-) -> tuple[Path, float | None, int, int, int]:
-    """Runs entirely inside a worker thread. Returns
-    (weights_path, accuracy, frame_count, class_id, version)."""
-    class_id = _next_class_id()
-    version = _next_version()
-
-    tmp_frames_dir = TRAINING_DATA_DIR / "_tmp" / label
-    if tmp_frames_dir.exists():
-        shutil.rmtree(tmp_frames_dir)
-    frames = _extract_frames(video_path, tmp_frames_dir, label)
-    if not frames:
-        raise RuntimeError("no frames extracted from video")
-
-    train_frames, val_frames = _split_frames(frames, label)
-    _write_labels(train_frames, "train", class_id)
-    _write_labels(val_frames, "val", class_id)
-    data_yaml = _update_data_yaml(label, class_id)
-
-    weights_path, accuracy = _train_yolo(data_yaml, version)
-
-    shutil.rmtree(tmp_frames_dir, ignore_errors=True)
-    return weights_path, accuracy, len(frames), class_id, version
-
-
-# ---------- async orchestration (called from BackgroundTasks) ----------
-
-async def run_training_pipeline(
-    video_path: Path, name: str, label: str, price: float
-) -> None:
-    try:
-        (
-            weights_path,
-            accuracy,
-            frame_count,
-            class_id,
-            version,
-        ) = await asyncio.to_thread(_do_training_sync, video_path, label)
-
-        async with SessionLocal() as session:
-            await session.execute(
-                update(ModelVersion).values(is_active=False)
-            )
-            session.add(
-                ModelVersion(
-                    filename=weights_path.name,
-                    num_classes=class_id + 1,
-                    accuracy=accuracy,
-                    is_active=True,
-                    notes=f"trained on {label}",
+            mode = os.environ.get("TRAIN_MODE", "stub").lower()
+            accuracy = None
+            if mode == "real" and total_frames > 0:
+                from ultralytics import YOLO
+                data_yaml = training_data_root / "data.yaml"
+                data_yaml.write_text(
+                    "path: " + str(training_data_root.resolve()) + "\n"
+                    "train: images\nval: images\n"
+                    f"nc: {len(class_names)}\n"
+                    "names: [" + ", ".join(f"'{_yaml_escape(n)}'" for n in class_names) + "]\n",
+                    encoding="utf-8",
                 )
-            )
-            session.add(
-                MenuItem(
-                    name=name,
-                    label=label,
-                    price=price,
-                    frame_count=frame_count,
+                base = YOLO(str(Path(BASE_DIR) / "yolov8n.pt"))
+                out = base.train(
+                    data=str(data_yaml),
+                    epochs=int(os.environ.get("TRAIN_EPOCHS", "1")),
+                    imgsz=640, batch=4, project=str(training_data_root / "runs"),
+                    name="fit", exist_ok=True, verbose=False,
                 )
-            )
-            await session.commit()
+                best_src = Path(out.save_dir) / "weights" / "best.pt"
+                if best_src.exists():
+                    shutil.copy(best_src, model_out_path)
+            else:
+                baseline = Path(BASE_DIR) / "yolov8n.pt"
+                if not baseline.exists():
+                    raise RuntimeError(f"baseline weights missing at {baseline}")
+                shutil.copy(baseline, model_out_path)
 
-        yolo_service.reload_model()
-        logger.info(
-            "training complete: %s (class_id=%s version=%s) → %s",
-            name,
-            class_id,
-            version,
-            weights_path,
-        )
-    except Exception:
-        logger.exception("training pipeline failed for %s", name)
-    finally:
-        try:
-            video_path.unlink(missing_ok=True)
-        except Exception:
-            pass
+            # Flip old model_versions to inactive, add new active row
+            prev = s.execute(
+                select(ModelVersion).where(ModelVersion.tenant_id == tenant_id,
+                                            ModelVersion.is_active.is_(True))
+            ).scalars().all()
+            for p in prev:
+                p.is_active = False
+
+            s.add(ModelVersion(
+                tenant_id=tenant_id, filename="best.pt",
+                num_classes=max(len(class_names), 1),
+                accuracy=accuracy, is_active=True,
+                notes=("stub" if mode != "real" else "fine-tuned"),
+            ))
+
+            for j in queued:
+                if j.status == "training":
+                    j.status = "done"; j.finished_at = datetime.utcnow()
+
+            results["jobs"] = [
+                {"id": j.id, "status": j.status, "frames": j.frames_extracted} for j in queued
+            ]
+        except Exception as e:
+            results["failed"] = True
+            results["error"] = str(e)[:500]
+            tb = traceback.format_exc()[:2000]
+            for j in queued:
+                if j.status == "training":
+                    j.status = "failed"; j.error = tb; j.finished_at = datetime.utcnow()
+        finally:
+            _release_lock(s, tenant_id)
+            s.commit()
+
+    return results
