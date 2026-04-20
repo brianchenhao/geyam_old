@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'config/theme.dart';
 import 'providers/theme_provider.dart';
+import 'screens/landing_screen.dart';
 import 'screens/login_screen.dart';
 
 void main() {
@@ -26,7 +28,7 @@ class GeyamApp extends StatelessWidget {
       theme: GeyamTheme.light,
       darkTheme: GeyamTheme.dark,
       themeMode: themeProvider.mode,
-      home: const LoginScreen(),
+      home: kIsWeb ? const LandingScreen() : const LoginScreen(),
     );
   }
 }

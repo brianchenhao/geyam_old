@@ -1,11 +1,11 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/api_service.dart';
-import '../services/auth_service.dart';
-import '../widgets/cart_widget.dart';
-import '../widgets/theme_toggle.dart';
-import 'login_screen.dart';
+import '../widgets/confidence_badge.dart';
+import '../widgets/section_card.dart';
 
 class PosScreen extends StatefulWidget {
   const PosScreen({super.key});
@@ -15,191 +15,158 @@ class PosScreen extends StatefulWidget {
 }
 
 class _PosScreenState extends State<PosScreen> {
-  final List<CartItem> cart = [];
-  bool scanning = false;
-  bool confirming = false;
-  String? message;
+  final _picker = ImagePicker();
+  Uint8List? _lastImage;
+  List<dynamic> _detected = [];
+  final List<Map<String, dynamic>> _cart = [];
+  String? _error;
+  bool _busy = false;
 
-  double get total => cart.fold(0, (a, b) => a + b.lineTotal);
-
-  Future<void> _scanTray() async {
-    setState(() {
-      scanning = true;
-      message = null;
-    });
+  Future<void> _snap() async {
+    final x = await _picker.pickImage(source: ImageSource.camera, imageQuality: 80);
+    if (x == null) return;
+    final bytes = await x.readAsBytes();
+    setState(() { _lastImage = bytes; _busy = true; _error = null; });
     try {
-      final picker = ImagePicker();
-      final image = await picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 85,
+      final r = await ApiService.uploadBytes(
+        '/detect', bytes: bytes, filename: 'snap.jpg', contentType: 'image/jpeg',
       );
-      if (image == null) return;
+      setState(() => _detected = r['items']);
+    } on ApiException catch (e) {
+      setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
-      final detections = await ApiService.detect(image);
-      if (detections.isEmpty) {
-        setState(() => message = 'No products detected.');
-        return;
+  void _add(Map<String, dynamic> item) {
+    setState(() {
+      final existing = _cart.indexWhere((x) => x['menu_item_id'] == item['menu_item_id']);
+      if (existing >= 0) {
+        _cart[existing]['quantity'] = (_cart[existing]['quantity'] ?? 1) + 1;
+      } else {
+        _cart.add({
+          'menu_item_id': item['menu_item_id'],
+          'name': item['name'],
+          'price': item['price'],
+          'quantity': 1,
+          'source': item['source'],
+          'confidence': item['confidence'],
+        });
       }
-      setState(() {
-        for (final d in detections) {
-          final id = d['menu_item_id'] as int;
-          final existing = cart.indexWhere((c) => c.menuItemId == id);
-          if (existing >= 0) {
-            cart[existing].quantity += 1;
-          } else {
-            cart.add(CartItem(
-              menuItemId: id,
-              name: d['name'] as String,
-              price: (d['price'] as num).toDouble(),
-              confidence: (d['confidence'] as num?)?.toDouble(),
-              quantity: 1,
-            ));
-          }
-        }
-        message = '${detections.length} item(s) added';
-      });
-    } catch (e) {
-      setState(() => message = 'Scan failed: $e');
-    } finally {
-      if (mounted) setState(() => scanning = false);
-    }
-  }
-
-  Future<void> _confirmSale() async {
-    if (cart.isEmpty) return;
-    setState(() {
-      confirming = true;
-      message = null;
     });
-    try {
-      final result = await ApiService.createTransaction(
-        staffId: AuthService.userId,
-        items: cart
-            .map((c) => {
-                  'menu_item_id': c.menuItemId,
-                  'quantity': c.quantity,
-                  'unit_price': c.price,
-                  'confidence': c.confidence,
-                })
-            .toList(),
-      );
-      if (!mounted) return;
-      setState(() {
-        message =
-            'Sale #${result['id']} saved · total RM ${(result['total'] as num).toStringAsFixed(2)}';
-        cart.clear();
-      });
-    } catch (e) {
-      setState(() => message = 'Save failed: $e');
-    } finally {
-      if (mounted) setState(() => confirming = false);
-    }
   }
 
-  void _logout() {
-    AuthService.clear();
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-    );
+  Future<void> _checkout() async {
+    if (_cart.isEmpty) return;
+    try {
+      final tx = await ApiService.post('/transaction', body: {
+        'items': [
+          for (final c in _cart)
+            {
+              'menu_item_id': c['menu_item_id'],
+              'quantity': c['quantity'],
+              'source': c['source'] ?? 'manual',
+              'confidence': c['confidence'],
+            }
+        ],
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Created ${tx['tx_number']}')));
+      setState(() => _cart.clear());
+    } on ApiException catch (e) {
+      setState(() => _error = e.message);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('GEYAM POS · ${AuthService.username ?? "staff"}'),
+        title: const Text('POS'),
         actions: [
-          const ThemeToggle(),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Logout',
-            onPressed: _logout,
-          ),
+          IconButton(icon: const Icon(Icons.logout), onPressed: () {
+            ApiService.clearAuth();
+            Navigator.of(context).popUntil((r) => r.isFirst);
+          }),
         ],
       ),
-      body: Column(
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Expanded(flex: 2, child: _cameraPanel()),
+            const SizedBox(width: 16),
+            Expanded(flex: 1, child: _cartPanel()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _cameraPanel() => SectionCard(
+    title: 'Scan',
+    trailing: _busy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : null,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 220,
+          child: _lastImage == null
+            ? const Center(child: Text('Tap Snap to scan a tray'))
+            : Image.memory(_lastImage!, fit: BoxFit.cover),
+        ),
+        const SizedBox(height: 12),
+        FilledButton.icon(onPressed: _snap, icon: const Icon(Icons.camera_alt), label: const Text('Snap')),
+        const SizedBox(height: 16),
+        if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
+        if (_detected.isEmpty && !_busy) const Text('No detections yet'),
+        for (final d in _detected) ListTile(
+          title: Text(d['name'] ?? d['label'] ?? '?'),
+          subtitle: Text('RM ${d['price'] ?? 0}'),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ConfidenceBadge(
+                confidence: (d['confidence'] ?? 0.0).toDouble(),
+                needsConfirm: d['needs_confirm'] ?? false,
+                source: d['source'],
+              ),
+              const SizedBox(width: 8),
+              IconButton(icon: const Icon(Icons.add), onPressed: () => _add(d as Map<String, dynamic>)),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _cartPanel() {
+    final total = _cart.fold<double>(
+        0, (t, c) => t + ((c['price'] ?? 0).toDouble() * (c['quantity'] ?? 1)));
+    return SectionCard(
+      title: 'Cart',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (message != null)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              color: Colors.black26,
-              child: Text(message!, textAlign: TextAlign.center),
-            ),
-          Expanded(
-            child: CartWidget(
-              items: cart,
-              onRemove: (i) => setState(() => cart.removeAt(i)),
-              onQtyChange: (i, delta) {
-                setState(() {
-                  cart[i].quantity += delta;
-                  if (cart[i].quantity <= 0) cart.removeAt(i);
-                });
-              },
-            ),
+          if (_cart.isEmpty) const Text('Empty'),
+          for (final c in _cart) Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(children: [
+              Expanded(child: Text(c['name'])),
+              Text('x${c['quantity']}'),
+              const SizedBox(width: 12),
+              Text('RM ${((c['price'] ?? 0).toDouble() * (c['quantity'] ?? 1)).toStringAsFixed(2)}'),
+            ]),
           ),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: Colors.white24)),
-            ),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Total',
-                        style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
-                    Text('RM ${total.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 56,
-                        child: ElevatedButton.icon(
-                          onPressed: scanning ? null : _scanTray,
-                          icon: scanning
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.camera_alt),
-                          label: const Text('Scan tray'),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: SizedBox(
-                        height: 56,
-                        child: ElevatedButton.icon(
-                          onPressed: (cart.isEmpty || confirming)
-                              ? null
-                              : _confirmSale,
-                          icon: confirming
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.check),
-                          label: const Text('Confirm sale'),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+          const Divider(),
+          Row(children: [
+            const Text('TOTAL', style: TextStyle(fontWeight: FontWeight.w700)),
+            const Spacer(),
+            Text('RM ${total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w700)),
+          ]),
+          const SizedBox(height: 12),
+          FilledButton(onPressed: _cart.isEmpty ? null : _checkout, child: const Text('Checkout')),
         ],
       ),
     );

@@ -1,11 +1,9 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
-import '../services/auth_service.dart';
-import '../widgets/sales_chart.dart';
-import '../widgets/theme_toggle.dart';
-import 'login_screen.dart';
-import 'product_upload_screen.dart';
+import '../widgets/gradient_kpi_card.dart';
+import '../widgets/section_card.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -15,15 +13,9 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  Map<String, dynamic>? summary;
-  List<dynamic> sales = [];
-  List<Map<String, dynamic>> forecast = [];
-  bool loading = true;
-  String? loadError;
-
-  final askCtrl = TextEditingController();
-  String? askAnswer;
-  bool asking = false;
+  Map<String, dynamic>? _data;
+  String _range = 'today';
+  String? _error;
 
   @override
   void initState() {
@@ -32,241 +24,146 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _refresh() async {
-    setState(() {
-      loading = true;
-      loadError = null;
-    });
     try {
-      final results = await Future.wait([
-        ApiService.getSalesSummary(),
-        ApiService.getSales(),
-        ApiService.getForecast(),
-      ]);
-      setState(() {
-        summary = results[0] as Map<String, dynamic>;
-        sales = results[1] as List<dynamic>;
-        forecast = (results[2] as List<dynamic>)
-            .map((e) => Map<String, dynamic>.from(e as Map))
-            .toList();
-      });
-    } catch (e) {
-      setState(() => loadError = '$e');
-    } finally {
-      if (mounted) setState(() => loading = false);
+      final d = await ApiService.get('/dashboard', query: {'range': _range});
+      setState(() { _data = d; _error = null; });
+    } on ApiException catch (e) {
+      setState(() => _error = e.message);
     }
-  }
-
-  Future<void> _ask() async {
-    final q = askCtrl.text.trim();
-    if (q.isEmpty) return;
-    setState(() {
-      asking = true;
-      askAnswer = null;
-    });
-    try {
-      final result = await ApiService.ask(q);
-      setState(() => askAnswer = result['answer'] as String? ??
-          result['error'] as String? ??
-          'No answer');
-    } catch (e) {
-      setState(() => askAnswer = 'Error: $e');
-    } finally {
-      if (mounted) setState(() => asking = false);
-    }
-  }
-
-  void _logout() {
-    AuthService.clear();
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('GEYAM Dashboard · ${AuthService.username ?? "manager"}'),
+        title: const Text('Dashboard'),
         actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh),
-            onPressed: loading ? null : _refresh,
-          ),
-          IconButton(
-            tooltip: 'Train new product',
-            icon: const Icon(Icons.video_call),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ProductUploadScreen()),
+          for (final r in const ['today', '7d', '30d'])
+            TextButton(
+              onPressed: () { setState(() => _range = r); _refresh(); },
+              child: Text(r, style: TextStyle(
+                fontWeight: _range == r ? FontWeight.w700 : FontWeight.w400,
+                color: _range == r ? Theme.of(context).colorScheme.primary : null,
+              )),
             ),
-          ),
-          const ThemeToggle(),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Logout',
-            onPressed: _logout,
-          ),
+          const SizedBox(width: 16),
         ],
       ),
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : loadError != null
-              ? Center(child: Text('Failed to load: $loadError'))
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _summaryCards(),
-                      const SizedBox(height: 24),
-                      _section('Forecast (predicted next 7 days)',
-                          SizedBox(height: 240, child: SalesChart(forecast: forecast))),
-                      const SizedBox(height: 24),
-                      _section('Recent sales', _salesTable()),
-                      const SizedBox(height: 24),
-                      _section('Ask the AI', _askBox()),
-                    ],
-                  ),
-                ),
-    );
-  }
-
-  Widget _summaryCards() {
-    final s = summary ?? {};
-    final topItems = (s['top_selling_items'] as List?) ?? [];
-    final topName =
-        topItems.isEmpty ? '—' : (topItems.first['name'] as String);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth > 700;
-        final cards = [
-          _summaryCard('Total revenue',
-              'RM ${(s['total_revenue'] as num? ?? 0).toStringAsFixed(2)}'),
-          _summaryCard('Transactions', '${s['total_transactions'] ?? 0}'),
-          _summaryCard('Top seller', topName),
-        ];
-        if (wide) {
-          return Row(children: [
-            for (final c in cards) ...[Expanded(child: c), const SizedBox(width: 12)],
-          ]..removeLast());
-        }
-        return Column(
-          children: [
-            for (final c in cards) ...[c, const SizedBox(height: 12)],
-          ]..removeLast(),
-        );
-      },
-    );
-  }
-
-  Widget _summaryCard(String label, String value) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: const TextStyle(fontSize: 12)),
-            const SizedBox(height: 8),
-            Text(value,
-                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          ],
+      body: RefreshIndicator(
+        onRefresh: _refresh,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(24),
+          child: _error != null ? Text(_error!, style: const TextStyle(color: Colors.red))
+                                 : _data == null ? const Center(child: CircularProgressIndicator()) : _body(),
         ),
       ),
     );
   }
 
-  Widget _section(String title, Widget child) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _body() {
+    final d = _data!;
+    final kpis = [
+      ('Revenue', 'RM ${d['revenue']}'),
+      ('Transactions', '${d['tx_count']}'),
+      ('Avg basket', 'RM ${d['avg_basket']}'),
+      ('Top item', (d['top_item'] ?? '—').toString()),
+      ('Low stock', '${(d['low_stock'] as List).length}'),
+      ('Anomaly z', '${d['anomaly_z']}'),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 16, runSpacing: 16,
           children: [
-            Text(title,
-                style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            child,
+            for (int i = 0; i < kpis.length; i++)
+              SizedBox(width: 220, child: GradientKpiCard(label: kpis[i].$1, value: kpis[i].$2, gradientIndex: i)),
           ],
         ),
-      ),
+        const SizedBox(height: 24),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: SectionCard(title: 'Staff performance', child: _staffTable(d))),
+            const SizedBox(width: 16),
+            Expanded(child: SectionCard(title: 'Recent transactions', child: _recentTable(d))),
+          ],
+        ),
+        const SizedBox(height: 16),
+        SectionCard(title: 'Detection source breakdown', child: _sourceBars(d)),
+      ],
     );
   }
 
-  Widget _salesTable() {
-    if (sales.isEmpty) return const Text('No sales yet.');
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        columns: const [
-          DataColumn(label: Text('ID')),
-          DataColumn(label: Text('When')),
-          DataColumn(label: Text('Items')),
-          DataColumn(label: Text('Total')),
-        ],
-        rows: [
-          for (final tx in sales)
-            DataRow(cells: [
-              DataCell(Text('${tx['id']}')),
-              DataCell(Text(_formatDate(tx['created_at'] as String?))),
-              DataCell(Text('${(tx['items'] as List).length}')),
-              DataCell(Text('RM ${(tx['total'] as num).toStringAsFixed(2)}')),
+  Widget _staffTable(Map<String, dynamic> d) {
+    final rows = (d['staff_performance'] as List);
+    if (rows.isEmpty) return const Text('No sales yet');
+    return Column(
+      children: [
+        for (final s in rows) Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(children: [
+            Expanded(flex: 3, child: Text(s['username'] ?? '?')),
+            Expanded(child: Text('${s['tx_count']} tx', textAlign: TextAlign.end)),
+            Expanded(child: Text('RM ${s['revenue']}', textAlign: TextAlign.end)),
+          ]),
+        ),
+      ],
+    );
+  }
+
+  Widget _recentTable(Map<String, dynamic> d) {
+    final rows = (d['recent_transactions'] as List);
+    if (rows.isEmpty) return const Text('No transactions');
+    return Column(
+      children: [
+        for (final t in rows) Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(children: [
+            Expanded(flex: 3, child: Text(t['tx_number'])),
+            Expanded(child: Text('RM ${t['total']}', textAlign: TextAlign.end)),
+          ]),
+        ),
+      ],
+    );
+  }
+
+  Widget _sourceBars(Map<String, dynamic> d) {
+    final breakdown = (d['source_breakdown'] as Map).cast<String, dynamic>();
+    if (breakdown.isEmpty) return const Text('No detections yet');
+    final entries = breakdown.entries.toList();
+    final maxY = entries.map((e) => (e.value as num).toDouble()).reduce((a, b) => a > b ? a : b);
+    return SizedBox(
+      height: 200,
+      child: BarChart(BarChartData(
+        maxY: maxY.toDouble() * 1.2,
+        barGroups: [
+          for (int i = 0; i < entries.length; i++)
+            BarChartGroupData(x: i, barRods: [
+              BarChartRodData(
+                toY: (entries[i].value as num).toDouble(),
+                color: Theme.of(context).colorScheme.primary,
+                width: 24,
+                borderRadius: BorderRadius.circular(4),
+              ),
             ]),
         ],
-      ),
-    );
-  }
-
-  String _formatDate(String? iso) {
-    if (iso == null) return '—';
-    final dt = DateTime.tryParse(iso);
-    if (dt == null) return iso;
-    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
-        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-  }
-
-  Widget _askBox() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        TextField(
-          controller: askCtrl,
-          decoration: const InputDecoration(
-            hintText: 'e.g. Should I restock vanhouten?',
-            border: OutlineInputBorder(),
-          ),
-          onSubmitted: (_) => _ask(),
-        ),
-        const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.centerRight,
-          child: ElevatedButton.icon(
-            onPressed: asking ? null : _ask,
-            icon: asking
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.send),
-            label: const Text('Ask'),
-          ),
-        ),
-        if (askAnswer != null) ...[
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.black26,
-              borderRadius: BorderRadius.circular(8),
+        titlesData: FlTitlesData(
+          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          bottomTitles: AxisTitles(sideTitles: SideTitles(
+            showTitles: true,
+            getTitlesWidget: (v, _) => Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(entries[v.toInt()].key, style: const TextStyle(fontSize: 11)),
             ),
-            child: Text(askAnswer!),
-          ),
-        ],
-      ],
+          )),
+        ),
+        gridData: const FlGridData(show: false),
+        borderData: FlBorderData(show: false),
+      )),
     );
   }
 }
