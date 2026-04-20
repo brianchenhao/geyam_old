@@ -81,6 +81,21 @@ class ApiService {
     return m;
   }
 
+  static Future<Map<String, dynamic>> devOwnerLogin(String tenantHandle) async {
+    final r = await http.post(
+      _uri('/auth/dev/owner'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'tenant_handle': tenantHandle}),
+    );
+    final m = _decode(r) as Map<String, dynamic>;
+    Session.token = m['access_token'] as String;
+    Session.tenantId = m['tenant_id'] as int;
+    Session.userId = m['user_id'] as int;
+    Session.role = m['role'] as String;
+    Session.tenantHandle = tenantHandle;
+    return m;
+  }
+
   static Future<Map<String, dynamic>> googleLogin(String idToken) async {
     final r = await http.post(
       _uri('/auth/google'),

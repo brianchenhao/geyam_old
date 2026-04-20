@@ -22,6 +22,23 @@ class _LoginScreenState extends State<LoginScreen> {
   bool loading = false;
   String? error;
 
+  Future<void> _devOwnerLogin() async {
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      await ApiService.devOwnerLogin(handleCtrl.text.trim());
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context, MaterialPageRoute(builder: (_) => const DashboardScreen()));
+    } catch (e) {
+      setState(() => error = 'Owner login failed: $e');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
   Future<void> _login() async {
     setState(() {
       loading = true;
@@ -107,12 +124,24 @@ class _LoginScreenState extends State<LoginScreen> {
                             height: 22,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Text('Login'),
+                        : const Text('Cashier login'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: OutlinedButton.icon(
+                    onPressed: loading ? null : _devOwnerLogin,
+                    icon: const Icon(Icons.admin_panel_settings),
+                    label: const Text('Owner login (dev)'),
                   ),
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'Dev seed: brianchenjunhao / staff1.brianchenjunhao / 123456',
+                  'Cashier: staff1.brianchenjunhao / PIN 123456\n'
+                  'Owner: uses shop handle only (dev-mode shortcut)',
+                  textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 11),
                 ),
               ],
