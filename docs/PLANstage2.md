@@ -1422,9 +1422,17 @@ PHASE 12 — Audit + WebSocket + offline
 
 PHASE 13 — Frontend (Flutter web + mobile)
 ──────────────────────────────────────────────
+  NOTE: Every screen must follow the Design Reference section above.
+  Source of truth = designreference/light mode.png (dashboards) and
+  designreference/dark mode.webp (landing + hero cards). Visual
+  vocabulary (gradient KPI cards, section cards, glow icon tiles, etc.)
+  is defined there; do not diverge without updating the design reference.
+
   69. Landing screen (kIsWeb) with demo.mp4 autoplay muted loop
+      (match dark-mode reference: hero + chart-card + 2-feature grid)
   70. Login screen with Owner (Google) / Cashier (PIN) tabs
   71. Manager dashboard with all widgets + fl_chart   → charts render on live data
+      (match light-mode reference: KPI gradient row + 2 charts + 2 tables)
   72. Transactions list + drill-down detail
   73. Menu Manager + CSV preview + image upload
   74. Training screen with queue + Train Now button
@@ -1509,6 +1517,106 @@ Additions for Stage 2:
 ```
 
 Toggle stored in local state. Default: dark mode on every build (web, mobile). Language: English only for Stage 2.
+
+---
+
+## Design Reference — Phase 13 Flutter UI
+
+The Flutter screens built in Phase 13 must visually match the two reference images shipped in `designreference/` at the repo root:
+
+- `designreference/light mode.png` — Coupler.io-style "Web analytics dashboard" layout: horizontal row of **gradient KPI cards** (pink → violet → indigo → teal → rose → amber), tabbed top nav on the right (Overview / Channel performance / Geo performance / Landing pages), two side-by-side chart panels below the KPIs, paired data tables with a soft-purple highlight column at the bottom, sans-serif typography, compact rows.
+
+- `designreference/dark mode.webp` — Datago-style dark hero: near-black background, large white section heading, one prominent dashboard card containing inline KPI chips and a line chart, two smaller feature sub-cards beneath it with **glowing violet/teal 3D icons** on soft gradient tiles, muted-gray body copy, subtle borders, rounded corners ~12–16 px.
+
+### Visual Vocabulary (apply to every Phase 13 screen)
+
+```
+KPI cards
+  - Rounded 16px corners
+  - Full-height linear gradient background (2-stop, 135°)
+  - Big bold white number (display/xl, weight 700)
+  - Muted label above the number (12-14px, 70% white)
+  - One gradient per KPI — rotate through the 6-color palette above
+  - Minimal icon or no icon; keep content focused on the number
+
+Section cards (charts, tables, lists)
+  - Rounded 12-16px corners
+  - Surface color (#00004D dark / #F5F5F5 light)
+  - 1px subtle border (12% white on dark, 10% black on light)
+  - Inner padding 20-24px
+  - Optional glow: 20-30px blur, 10-20% alpha, accent color
+
+Top nav
+  - Tabs on the right side, underline the active tab in Accent (#1E90FF)
+  - Primary action button (e.g. "Add product", "Setup dashboard") far right in solid Accent
+  - Shop logo + name on the left
+
+Charts
+  - fl_chart for bars and lines
+  - Bar width proportional; use 2-3 gradient fills not flat colors
+  - Grid lines at 20% white (dark) / 10% black (light), dashed
+  - Hide Y-axis line; labels in muted gray
+
+Tables
+  - Zebra rows OFF; separation via 1px bottom border (8% white / 6% black)
+  - Highlight one metric column with a soft purple/indigo tint
+  - Monospaced or tabular-figures font for numeric columns
+
+Icons (product tiles, nav, feature cards)
+  - 3D-looking gradient tiles: violet → teal or indigo → cyan
+  - Soft drop shadow (blur 24-32, 20% alpha)
+  - 2-4px inner highlight stroke for glass effect
+  - Use sparingly — the reference uses these only for hero/feature cards, not for every list icon
+
+Badges
+  - Success: filled #2ECC71, 6px radius, 10px horizontal padding
+  - Warning: outlined #F1C40F with pale fill
+  - Error:   filled #E74C3C
+  - Info:    filled #3498DB
+
+Typography
+  - Display (KPI numbers): 36-48px, weight 700
+  - Section heading:       20-24px, weight 600
+  - Card title:            14-16px, weight 500
+  - Body:                  13-14px, weight 400
+  - Captions / labels:     11-12px, 70% opacity
+
+Spacing
+  - Base grid: 4px; cards aligned to 8px multiples
+  - Section gap: 24px; card gap: 16px; inner padding: 20-24px
+```
+
+### Screen-by-screen mapping to references
+
+```
+Dashboard (dashboard_screen.dart)
+  → Light-mode reference: KPI row → two charts → two tables
+
+Mobile Owner Light Dashboard
+  → Simplified vertical stack of the same KPI cards
+
+Landing Page
+  → Dark-mode reference: hero heading → chart card → 2-feature grid,
+    with the demo.mp4 replacing the chart card's chart
+
+POS (pos_screen.dart)
+  → Dark mode, large camera preview area, confidence badges use the
+    badge vocabulary above, menu picker uses the 3D gradient tiles
+    for product thumbnails
+
+Menu Manager, Settings, Inventory, etc.
+  → Section cards vocabulary, tabbed top nav when multiple subviews
+```
+
+### Rules
+
+1. Default every build (web, Android) to dark mode; light mode toggle available in Settings.
+2. Gradient KPI cards only on summary screens (Dashboard, Mobile Dashboard, reports). Transactional screens stay on flat Surface cards.
+3. Never invent new accent colors — pick from the palette above. The 6-color KPI gradient palette is fixed.
+4. Match the reference's *density* — the light-mode example fits 7 KPIs, 2 charts, and 2 tables in one viewport. Keep rows tight (44px row height max for tables).
+5. If a requested layout can't reproduce the reference faithfully at mobile widths, fall back to the vertical mobile-dashboard pattern rather than cramming desktop layouts onto a phone.
+
+The Flutter theme implementation lives in `frontend/geyam_pos/lib/config/theme.dart` (carried from Stage 1) and the widget set in `frontend/geyam_pos/lib/widgets/`. Expand the widget set in Phase 13 to include: `gradient_kpi_card.dart`, `section_card.dart`, `glow_icon_tile.dart`, `data_table_soft.dart`, `tabbed_nav.dart`.
 
 ---
 

@@ -19,7 +19,7 @@ Multi-tenant Smart POS SaaS for packaged food. Stage 2 evolves the Stage 1 singl
 - Auth: Google OAuth for owners, bcrypt PIN for cashiers, JWT sessions (owner 24h / cashier 12h + 30-day refresh)
 - Payments: Billplz DuitNow QR (per-tenant creds, Fernet-encrypted at rest, sandbox/production toggle)
 - Email: Resend via noreply@geyam.com (SPF+DKIM on Cloudflare DNS — nameservers are Cloudflare; Hostinger still hosts static site)
-- Frontend: Flutter (web + Android), fl_chart, dark-mode-default Stage 1 palette
+- Frontend: Flutter (web + Android), fl_chart, dark-mode-default Stage 1 palette. **Phase 13 UI must match `designreference/light mode.png` and `designreference/dark mode.webp`** — gradient KPI cards, tabbed top nav, glowing violet/teal icon tiles, section cards with subtle borders. Full visual vocabulary in `docs/PLANstage2.md` → "Design Reference — Phase 13 Flutter UI".
 - Infra: Docker Compose, Cloudflare Tunnel → laptop :9000; Hostinger serves Flutter web build
 
 ## Dev Environment
