@@ -1,40 +1,62 @@
-"""Seed initial users: one staff, one manager. Safe to re-run."""
+"""Stage 2 dev seed: one tenant for the admin, one cashier under it."""
 import asyncio
+import sys
+from pathlib import Path
 
-import bcrypt
-from sqlalchemy import select
+from dotenv import load_dotenv
 
-from app.database import SessionLocal, init_db
-from app.models.user import User
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
-SEED_USERS = [
-    {"username": "staff1", "password": "staff123", "role": "staff"},
-    {"username": "manager1", "password": "manager123", "role": "manager"},
-]
+from sqlalchemy import select  # noqa: E402
 
+from app.database import SessionLocal, init_db  # noqa: E402
+from app.models import Tenant, TenantSettings, User  # noqa: E402
+from app.security import hash_pin  # noqa: E402
 
-def hash_password(plain: str) -> str:
-    return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+ADMIN_EMAIL = "brianchen.crisp@gmail.com"
+HANDLE = "brianchenjunhao"
+SHOP_NAME = "Brian's Demo Shop"
+CASHIER_PIN = "123456"
 
 
 async def main() -> None:
     await init_db()
     async with SessionLocal() as session:
-        for u in SEED_USERS:
-            existing = await session.scalar(
-                select(User).where(User.username == u["username"])
-            )
-            if existing:
-                print(f"skip {u['username']} (exists)")
-                continue
+        tenant = await session.scalar(select(Tenant).where(Tenant.handle == HANDLE))
+        if tenant is None:
+            tenant = Tenant(handle=HANDLE, name=SHOP_NAME, owner_email=ADMIN_EMAIL)
+            session.add(tenant)
+            await session.flush()
+            session.add(TenantSettings(tenant_id=tenant.id))
             session.add(
                 User(
-                    username=u["username"],
-                    password=hash_password(u["password"]),
-                    role=u["role"],
+                    tenant_id=tenant.id,
+                    username=f"owner.{HANDLE}",
+                    email=ADMIN_EMAIL,
+                    role="owner",
                 )
             )
-            print(f"added {u['username']} ({u['role']})")
+            print(f"+ tenant {tenant.handle} (owner={ADMIN_EMAIL})")
+        else:
+            print(f"= tenant {tenant.handle} already exists")
+
+        cashier = await session.scalar(
+            select(User)
+            .where(User.tenant_id == tenant.id, User.username == f"staff1.{HANDLE}")
+            .execution_options(skip_tenant_filter=True)
+        )
+        if cashier is None:
+            session.add(
+                User(
+                    tenant_id=tenant.id,
+                    username=f"staff1.{HANDLE}",
+                    pin_hash=hash_pin(CASHIER_PIN),
+                    role="cashier",
+                )
+            )
+            print(f"+ cashier staff1.{HANDLE} (pin={CASHIER_PIN})")
+
         await session.commit()
 
 

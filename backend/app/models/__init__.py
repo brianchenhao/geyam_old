@@ -1,6 +1,8 @@
-from app.models.menu_item import MenuItem
-from app.models.model_version import ModelVersion
-from app.models.transaction import Transaction, TransactionItem
+from app.database import register_tenant_scoped
+from app.models.audit_log import AuditLog
+from app.models.tenant import Tenant, TenantSettings
 from app.models.user import User
 
-__all__ = ["User", "MenuItem", "Transaction", "TransactionItem", "ModelVersion"]
+register_tenant_scoped(TenantSettings, User, AuditLog)
+
+__all__ = ["Tenant", "TenantSettings", "User", "AuditLog"]
