@@ -47,6 +47,7 @@ from app.routers import auth as auth_router  # noqa: E402
 from app.routers import detect as detect_router  # noqa: E402
 from app.routers import menu as menu_router  # noqa: E402
 from app.routers import payment as payment_router  # noqa: E402
+from app.routers import receipt as receipt_router  # noqa: E402
 from app.routers import settings as settings_router  # noqa: E402
 from app.routers import train as train_router  # noqa: E402
 from app.routers import transaction as transaction_router  # noqa: E402
@@ -60,8 +61,9 @@ app.include_router(train_router.router)
 app.include_router(detect_router.router)
 app.include_router(transaction_router.router)
 app.include_router(payment_router.router)
+app.include_router(receipt_router.router)
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "phase": "8", "stage": 2}
+    return {"status": "ok", "phase": "9", "stage": 2}
