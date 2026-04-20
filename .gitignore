@@ -34,3 +34,6 @@ backend/training_data/labels/
 backend/training_data/_tmp/
 backend/training_data/data.yaml
 backend/*.pt
+
+# Uploaded/generated content — rendered receipts, logos, product images, training videos
+backend/uploads/
