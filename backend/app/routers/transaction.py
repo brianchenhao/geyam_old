@@ -1,147 +1,268 @@
-from datetime import date, datetime, timedelta
+"""Phase 8 — transactions + Billplz QR + manual/owner void + list/detail."""
+from datetime import datetime
 from decimal import Decimal
+from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import and_, desc, func, select
-from sqlalchemy.orm import selectinload
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import SessionLocal
+from app.deps import get_current_user, get_session, get_tenant, require_role
 from app.models.menu_item import MenuItem
+from app.models.payment import Payment
+from app.models.stock_movement import StockMovement
+from app.models.tenant import Tenant
+from app.models.tenant_settings import TenantSettings
 from app.models.transaction import Transaction, TransactionItem
-from app.schemas.transaction import (
-    SalesSummary,
-    TopItem,
-    TransactionCreate,
-    TransactionCreated,
-    TransactionOut,
-)
+from app.services.audit import audit
+from app.services.billplz import create_bill
+from app.services.crypto import decrypt_secret
+from app.services.tx_numbering import next_tx_number
 
-router = APIRouter(tags=["sales"])
+router = APIRouter(tags=["transactions"])
 
 
-def _date_conditions(start_date: date | None, end_date: date | None) -> list:
-    conds = []
-    if start_date is not None:
-        conds.append(
-            Transaction.created_at
-            >= datetime.combine(start_date, datetime.min.time())
-        )
-    if end_date is not None:
-        conds.append(
-            Transaction.created_at
-            < datetime.combine(end_date + timedelta(days=1), datetime.min.time())
-        )
-    return conds
+class LineItemIn(BaseModel):
+    menu_item_id: int
+    quantity: int = Field(ge=1, default=1)
+    confidence: Optional[float] = None
+    source: Optional[str] = Field(default="manual", pattern="^(yolo|mediapipe|openai|manual)$")
 
 
-@router.post("/transaction", response_model=TransactionCreated)
-async def create_transaction(payload: TransactionCreate):
-    menu_item_ids = {i.menu_item_id for i in payload.items}
-
-    async with SessionLocal() as session:
-        existing_rows = await session.scalars(
-            select(MenuItem.id).where(MenuItem.id.in_(menu_item_ids))
-        )
-        existing = set(existing_rows.all())
-        missing = menu_item_ids - existing
-        if missing:
-            raise HTTPException(
-                400, f"unknown menu_item_ids: {sorted(missing)}"
-            )
-
-        total = sum(
-            (Decimal(str(i.unit_price)) * i.quantity for i in payload.items),
-            Decimal("0"),
-        )
-
-        t = Transaction(
-            staff_id=payload.staff_id,
-            total=total,
-            payment=payload.payment,
-        )
-        for i in payload.items:
-            t.items.append(
-                TransactionItem(
-                    menu_item_id=i.menu_item_id,
-                    quantity=i.quantity,
-                    unit_price=Decimal(str(i.unit_price)),
-                    confidence=i.confidence,
-                )
-            )
-        session.add(t)
-        await session.commit()
-        await session.refresh(t)
-        return TransactionCreated(
-            id=t.id, total=float(t.total), created_at=t.created_at
-        )
+class TransactionCreateIn(BaseModel):
+    items: list[LineItemIn] = Field(min_length=1)
+    customer_id: Optional[int] = None
 
 
-@router.get("/sales", response_model=list[TransactionOut])
-async def list_sales(
-    start_date: date | None = Query(default=None),
-    end_date: date | None = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=500),
-):
-    conds = _date_conditions(start_date, end_date)
-    async with SessionLocal() as session:
-        stmt = (
-            select(Transaction)
-            .options(selectinload(Transaction.items))
-            .order_by(desc(Transaction.created_at))
-            .limit(limit)
-        )
-        if conds:
-            stmt = stmt.where(and_(*conds))
-        result = await session.scalars(stmt)
-        return result.all()
+class LineItemOut(BaseModel):
+    menu_item_id: Optional[int]
+    quantity: int
+    unit_price: Decimal
+    confidence: Optional[float] = None
+    source: Optional[str] = None
+
+    model_config = {"from_attributes": True}
 
 
-@router.get("/sales/summary", response_model=SalesSummary)
-async def sales_summary(
-    start_date: date | None = Query(default=None),
-    end_date: date | None = Query(default=None),
-):
-    conds = _date_conditions(start_date, end_date)
-    async with SessionLocal() as session:
-        tx_stmt = select(
-            func.coalesce(func.sum(Transaction.total), 0),
-            func.count(Transaction.id),
-        )
-        if conds:
-            tx_stmt = tx_stmt.where(and_(*conds))
-        total_revenue, total_transactions = (
-            await session.execute(tx_stmt)
-        ).one()
+class TransactionOut(BaseModel):
+    id: int
+    tenant_id: int
+    tx_number: str
+    total: Decimal
+    payment_method: str
+    payment_ref: Optional[str] = None
+    status: str
+    staff_id: Optional[int] = None
+    customer_id: Optional[int] = None
+    created_at: datetime
+    paid_at: Optional[datetime] = None
+    voided_at: Optional[datetime] = None
+    items: list[LineItemOut] = []
 
-        top_stmt = (
-            select(
-                MenuItem.id,
-                MenuItem.name,
-                func.sum(TransactionItem.quantity).label("qty"),
-                func.sum(
-                    TransactionItem.quantity * TransactionItem.unit_price
-                ).label("rev"),
-            )
-            .join(Transaction, TransactionItem.transaction_id == Transaction.id)
-            .join(MenuItem, TransactionItem.menu_item_id == MenuItem.id)
-            .group_by(MenuItem.id, MenuItem.name)
-            .order_by(desc("rev"))
-            .limit(5)
-        )
-        if conds:
-            top_stmt = top_stmt.where(and_(*conds))
-        top_rows = (await session.execute(top_stmt)).all()
+    model_config = {"from_attributes": True}
 
-    return SalesSummary(
-        total_revenue=float(total_revenue or 0),
-        total_transactions=int(total_transactions or 0),
-        top_selling_items=[
-            TopItem(
-                menu_item_id=r[0],
-                name=r[1],
-                quantity=int(r[2] or 0),
-                revenue=float(r[3] or 0),
-            )
-            for r in top_rows
-        ],
+
+async def _tx_to_out(session: AsyncSession, tx: Transaction) -> TransactionOut:
+    items = (await session.execute(
+        select(TransactionItem).where(TransactionItem.transaction_id == tx.id)
+    )).scalars().all()
+    return TransactionOut(
+        id=tx.id, tenant_id=tx.tenant_id, tx_number=tx.tx_number, total=tx.total,
+        payment_method=tx.payment_method, payment_ref=tx.payment_ref, status=tx.status,
+        staff_id=tx.staff_id, customer_id=tx.customer_id, created_at=tx.created_at,
+        paid_at=tx.paid_at, voided_at=tx.voided_at,
+        items=[LineItemOut.model_validate(i) for i in items],
     )
+
+
+@router.post("/transaction")
+async def create_transaction(
+    body: TransactionCreateIn,
+    user_claims: dict = Depends(get_current_user),
+    tenant_id: int = Depends(get_tenant),
+    session: AsyncSession = Depends(get_session),
+) -> TransactionOut:
+    item_ids = [li.menu_item_id for li in body.items]
+    menu_rows = (await session.execute(
+        select(MenuItem).where(MenuItem.id.in_(item_ids))
+    )).scalars().all()
+    m_by_id = {m.id: m for m in menu_rows}
+    if len(m_by_id) != len(set(item_ids)):
+        raise HTTPException(status_code=400, detail="unknown menu_item_id in items")
+
+    merged: dict[int, tuple[int, Decimal, Optional[float], Optional[str]]] = {}
+    for li in body.items:
+        m = m_by_id[li.menu_item_id]
+        if m.id in merged:
+            q, p, c, s = merged[m.id]
+            merged[m.id] = (q + li.quantity, p, c, s)
+        else:
+            merged[m.id] = (li.quantity, m.price, li.confidence, li.source)
+
+    for mid, (qty, _p, _c, _s) in merged.items():
+        if m_by_id[mid].stock_qty < qty:
+            raise HTTPException(status_code=400,
+                                detail=f"insufficient stock for {m_by_id[mid].name}: have {m_by_id[mid].stock_qty}, need {qty}")
+
+    total = Decimal("0")
+    for _mid, (qty, price, _c, _s) in merged.items():
+        total += price * qty
+
+    tx_number = await next_tx_number(session, tenant_id)
+    tx = Transaction(
+        tenant_id=tenant_id, tx_number=tx_number, staff_id=user_claims.get("user_id"),
+        customer_id=body.customer_id, total=total, payment_method="qr", status="pending",
+    )
+    session.add(tx)
+    await session.flush()
+
+    for mid, (qty, price, conf, src) in merged.items():
+        session.add(TransactionItem(
+            transaction_id=tx.id, menu_item_id=mid, quantity=qty,
+            unit_price=price, confidence=conf, source=src or "manual",
+        ))
+
+    await audit(session, action="tx.create", tenant_id=tenant_id,
+                user_id=user_claims.get("user_id"), entity="transaction", entity_id=tx.id,
+                meta={"tx_number": tx_number, "total": str(total), "items": len(merged)})
+    await session.commit()
+    await session.refresh(tx)
+    return await _tx_to_out(session, tx)
+
+
+@router.post("/transaction/{tx_id}/qr")
+async def request_qr(
+    tx_id: int,
+    user_claims: dict = Depends(get_current_user),
+    tenant_id: int = Depends(get_tenant),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    tx = (await session.execute(select(Transaction).where(Transaction.id == tx_id))).scalars().first()
+    if not tx:
+        raise HTTPException(status_code=404, detail="transaction not found")
+    if tx.status != "pending":
+        raise HTTPException(status_code=400, detail=f"tx not pending (status={tx.status})")
+
+    ts = (await session.execute(select(TenantSettings).where(TenantSettings.tenant_id == tenant_id))).scalars().first()
+    if ts is None or not (ts.billplz_api_key and ts.billplz_collection_id and ts.billplz_xsign_key):
+        raise HTTPException(status_code=400, detail="Configure Billplz in Settings")
+
+    api_key = decrypt_secret(ts.billplz_api_key)
+    tenant = (await session.execute(select(Tenant).where(Tenant.id == tenant_id))).scalars().first()
+    shop_email = ts.shop_contact_email or (tenant.owner_email if tenant else "noreply@geyam.com")
+
+    try:
+        bill = create_bill(
+            mode=ts.billplz_mode or "sandbox",
+            api_key=api_key,
+            collection_id=ts.billplz_collection_id,
+            name=tx.tx_number,
+            email=shop_email,
+            amount_cents=int(tx.total * 100),
+            description=tx.tx_number,
+            callback_url="https://api.geyam.com/payments/webhook",
+            redirect_url="https://geyam.com/payment-complete",
+            reference_1=str(tenant_id),
+            reference_2=str(tx.id),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"billplz failure: {type(e).__name__}")
+
+    session.add(Payment(
+        tenant_id=tenant_id, transaction_id=tx.id, provider="billplz",
+        bill_id=bill.get("id"), bill_url=bill.get("url"), amount=tx.total, state="due",
+        raw_payload=bill,
+    ))
+    await session.commit()
+    return {"bill_id": bill.get("id"), "bill_url": bill.get("url")}
+
+
+@router.post("/transaction/{tx_id}/void")
+async def void_transaction(
+    tx_id: int,
+    user_claims: dict = Depends(get_current_user),
+    tenant_id: int = Depends(get_tenant),
+    session: AsyncSession = Depends(get_session),
+) -> TransactionOut:
+    tx = (await session.execute(select(Transaction).where(Transaction.id == tx_id))).scalars().first()
+    if not tx:
+        raise HTTPException(status_code=404, detail="transaction not found")
+    if tx.status != "pending":
+        raise HTTPException(status_code=400, detail="only pending transactions can be voided via this endpoint")
+    tx.status = "voided"
+    tx.voided_at = datetime.utcnow()
+    tx.voided_by = user_claims.get("user_id")
+    await audit(session, action="tx.void", tenant_id=tenant_id,
+                user_id=user_claims.get("user_id"), entity="transaction", entity_id=tx.id)
+    await session.commit()
+    await session.refresh(tx)
+    return await _tx_to_out(session, tx)
+
+
+class OverrideVoidIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
+
+
+@router.post("/transaction/{tx_id}/override-void", dependencies=[Depends(require_role("owner"))])
+async def override_void(
+    tx_id: int,
+    body: OverrideVoidIn,
+    user_claims: dict = Depends(get_current_user),
+    tenant_id: int = Depends(get_tenant),
+    session: AsyncSession = Depends(get_session),
+) -> TransactionOut:
+    tx = (await session.execute(select(Transaction).where(Transaction.id == tx_id))).scalars().first()
+    if not tx:
+        raise HTTPException(status_code=404, detail="transaction not found")
+    if tx.status != "paid":
+        raise HTTPException(status_code=400, detail="override-void requires status=paid")
+
+    items = (await session.execute(select(TransactionItem).where(TransactionItem.transaction_id == tx.id))).scalars().all()
+    for ti in items:
+        if ti.menu_item_id:
+            m = (await session.execute(select(MenuItem).where(MenuItem.id == ti.menu_item_id))).scalars().first()
+            if m:
+                m.stock_qty = (m.stock_qty or 0) + (ti.quantity or 0)
+                session.add(StockMovement(
+                    tenant_id=tenant_id, menu_item_id=m.id, delta=ti.quantity,
+                    reason="void_restore", ref_type="transaction", ref_id=tx.id,
+                    created_by=user_claims.get("user_id"),
+                    note=f"override_void: {body.reason[:200]}",
+                ))
+    tx.status = "voided"
+    tx.voided_at = datetime.utcnow()
+    tx.voided_by = user_claims.get("user_id")
+    await audit(session, action="tx.override_void", tenant_id=tenant_id,
+                user_id=user_claims.get("user_id"), entity="transaction", entity_id=tx.id,
+                meta={"reason": body.reason})
+    await session.commit()
+    await session.refresh(tx)
+    return await _tx_to_out(session, tx)
+
+
+@router.get("/transactions")
+async def list_transactions(
+    status: Optional[str] = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=200),
+    tenant_id: int = Depends(get_tenant),
+    session: AsyncSession = Depends(get_session),
+) -> list[TransactionOut]:
+    stmt = select(Transaction).order_by(Transaction.id.desc()).offset((page - 1) * page_size).limit(page_size)
+    if status:
+        stmt = stmt.where(Transaction.status == status)
+    rows = (await session.execute(stmt)).scalars().all()
+    return [await _tx_to_out(session, tx) for tx in rows]
+
+
+@router.get("/transactions/{tx_id}")
+async def get_transaction(
+    tx_id: int,
+    tenant_id: int = Depends(get_tenant),
+    session: AsyncSession = Depends(get_session),
+) -> TransactionOut:
+    tx = (await session.execute(select(Transaction).where(Transaction.id == tx_id))).scalars().first()
+    if not tx:
+        raise HTTPException(status_code=404, detail="transaction not found")
+    return await _tx_to_out(session, tx)
