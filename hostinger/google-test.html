@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>GEYAM — Google sign-in test</title>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+    body { font-family: -apple-system, Segoe UI, sans-serif; max-width: 720px;
+           margin: 40px auto; padding: 24px; background: #0b0b1a; color: #f0f0f0; }
+    h1 { font-weight: 700; font-size: 24px; margin: 0 0 8px; }
+    p { color: #aaa; font-size: 14px; line-height: 1.6; }
+    .card { background: #00004d; border: 1px solid rgba(255,255,255,0.1);
+            padding: 24px; border-radius: 16px; margin: 16px 0; }
+    textarea { width: 100%; height: 120px; background: #000; color: #0f0;
+               border: 1px solid #333; border-radius: 8px; padding: 12px;
+               font-family: monospace; font-size: 11px; }
+    button { background: #1e90ff; color: white; border: 0; padding: 10px 20px;
+             border-radius: 8px; font-size: 14px; cursor: pointer; margin-right: 8px; }
+    button:hover { background: #4da6ff; }
+    .success { color: #2ecc71; }
+    .error { color: #e74c3c; }
+    pre { background: #000; padding: 12px; border-radius: 8px; overflow: auto;
+          font-size: 11px; color: #fff; }
+    code { background: #222; padding: 2px 6px; border-radius: 4px; }
+    label { display: block; margin-bottom: 6px; color: #ccc; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h1>GEYAM — Google sign-in test</h1>
+  <p>Use this page to grab a real Google ID token for a tenant owner so you can test the full owner flow in the Flutter app.</p>
+
+  <div class="card">
+    <label>1. Sign in with Google</label>
+    <div id="g_btn"></div>
+    <p id="status" style="margin-top: 16px;">Waiting for Google…</p>
+  </div>
+
+  <div class="card">
+    <label>2. Your Google ID token (paste this into Flutter's Owner tab "Google id_token" field)</label>
+    <textarea id="tok" readonly placeholder="Click Sign in above…"></textarea>
+    <button onclick="copyTok()">Copy to clipboard</button>
+    <button onclick="testBackend()">Test against /auth/google →</button>
+    <pre id="resp" style="display: none;"></pre>
+  </div>
+
+  <div class="card">
+    <label>Configuration (edit if needed)</label>
+    <p>Client ID: <code id="cid"></code></p>
+    <p>Backend base: <input id="backend" value="http://localhost:9000" style="background:#000;color:#f0f0f0;border:1px solid #333;padding:6px;border-radius:4px;width:60%"></p>
+  </div>
+
+  <p style="color:#666;font-size:12px;margin-top:32px">
+    Prereqs:<br>
+    1. The Google OAuth client must have <code>http://localhost:5500</code> (or wherever you host this page) in Authorized JavaScript origins.<br>
+    2. The email you sign in with must either be in <code>ADMIN_EMAILS</code> or match a <code>tenants.owner_email</code> row.<br>
+    3. For the demo shop, first run: <code>python scripts/create_tenant.py --email YOUR@gmail.com --handle myshop --name "My Shop"</code>
+  </p>
+
+<script>
+const CLIENT_ID = '635598118500-nvach7lckp40c279at5mvmhtr5jkded4.apps.googleusercontent.com';
+document.getElementById('cid').textContent = CLIENT_ID;
+
+function handleCredential(response) {
+  const tok = response.credential;
+  document.getElementById('tok').value = tok;
+  const claims = parseJwt(tok);
+  document.getElementById('status').innerHTML =
+    '<span class="success">✅ Signed in as ' + claims.email + '</span>';
+}
+
+function parseJwt(token) {
+  const base64Url = token.split('.')[1];
+  const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+  const jsonPayload = decodeURIComponent(atob(base64).split('').map(c =>
+    '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+  return JSON.parse(jsonPayload);
+}
+
+function copyTok() {
+  const el = document.getElementById('tok');
+  el.select();
+  document.execCommand('copy');
+  alert('Copied — paste into Flutter Owner tab');
+}
+
+async function testBackend() {
+  const tok = document.getElementById('tok').value.trim();
+  const base = document.getElementById('backend').value.trim();
+  if (!tok) { alert('Sign in first'); return; }
+  try {
+    const r = await fetch(base + '/auth/google', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id_token: tok}),
+    });
+    const data = await r.json();
+    const out = document.getElementById('resp');
+    out.style.display = 'block';
+    out.textContent = 'HTTP ' + r.status + '\n' + JSON.stringify(data, null, 2);
+  } catch (e) {
+    document.getElementById('resp').style.display = 'block';
+    document.getElementById('resp').textContent = 'ERROR: ' + e;
+  }
+}
+
+window.onload = function () {
+  if (!window.google || !window.google.accounts) {
+    setTimeout(window.onload, 100);
+    return;
+  }
+  google.accounts.id.initialize({
+    client_id: CLIENT_ID,
+    callback: handleCredential,
+  });
+  google.accounts.id.renderButton(
+    document.getElementById('g_btn'),
+    { theme: 'filled_blue', size: 'large', width: 260 }
+  );
+  document.getElementById('status').textContent = 'Click the button above to sign in';
+};
+</script>
+</body>
+</html>
