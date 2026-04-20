@@ -1,0 +1,27 @@
+# Cloudflare Tunnel config for exposing the laptop backend as api.geyam.com.
+#
+# Setup (one-time):
+#   1. cloudflared tunnel login
+#   2. cloudflared tunnel create geyam
+#      → writes credentials JSON to ~/.cloudflared/<UUID>.json
+#      → put that UUID in `tunnel:` below
+#   3. cloudflared tunnel route dns geyam api.geyam.com
+#
+# Run:
+#   cloudflared tunnel --config deploy/cloudflared/config.yml run
+#
+# The port must match whatever start.sh currently binds (today: 8508).
+# Update `service:` when you bump the port.
+
+tunnel: REPLACE_WITH_TUNNEL_UUID
+credentials-file: C:\Users\brian\.cloudflared\REPLACE_WITH_TUNNEL_UUID.json
+
+ingress:
+  - hostname: api.geyam.com
+    service: http://localhost:8508
+    originRequest:
+      # POST /detect uploads images (~2-4 MB). Default is 100 MB so we're fine,
+      # but be explicit since the 30-sec video uploads can hit 100 MB.
+      connectTimeout: 30s
+      noTLSVerify: false
+  - service: http_status:404

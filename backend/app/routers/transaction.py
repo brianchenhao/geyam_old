@@ -342,3 +342,40 @@ async def _mark_paid(
         "tx_id": tx.id, "tx_number": tx.tx_number,
         "total": str(tx.total), "via": via,
     })
+
+    # Auto-email receipt when a customer is attached (Phase 14 #89 end-to-end).
+    # Best-effort: if rendering or sending fails we don't fail the webhook;
+    # the cashier can manually resend via POST /receipts/{id}/email.
+    if tx.customer_id is not None:
+        try:
+            from app.models import Customer
+            from app.routers.receipts import _ensure_pdf
+            from app.services.email_resend import ResendDisabled, send_receipt
+
+            cust = await session.get(Customer, tx.customer_id)
+            if cust and cust.email:
+                r = await _ensure_pdf(session, tx, tenant_id)
+                from pathlib import Path as _P
+                abs_path = _P(__file__).resolve().parent.parent.parent / r.pdf_path.lstrip("/")
+                try:
+                    msg_id = send_receipt(
+                        to_email=cust.email,
+                        subject=f"Receipt {tx.tx_number}",
+                        html=f"<p>Receipt <b>{tx.tx_number}</b> attached. Total RM {tx.total}.</p>",
+                        pdf_path=abs_path,
+                    )
+                    r.emailed_to = cust.email
+                    r.emailed_at = datetime.utcnow()
+                    r.resend_id = msg_id
+                except ResendDisabled:
+                    pass  # no Resend key — skip silently
+                except Exception as e:
+                    # Log to audit but don't fail the webhook.
+                    await audit.write(
+                        session, tenant_id=tenant_id,
+                        action="receipt.email.fail",
+                        entity="transaction", entity_id=tx.id,
+                        meta={"error": str(e)[:200]},
+                    )
+        except Exception:
+            pass  # never let auto-email block the paid path
