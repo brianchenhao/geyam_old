@@ -1,0 +1,16 @@
+name,price,category,barcode,stock_qty,reorder_point
+Mineral Water 500ml,2.00,drink,9551001001234,50,10
+Iced Lemon Tea,3.50,drink,9551001001235,40,10
+100 Plus Can,2.80,drink,9551001001236,60,15
+Coca-Cola Can,2.80,drink,9551001001237,60,15
+Milo Can,3.20,drink,9551001001238,48,12
+Twisties BBQ,2.50,snack,9551002002001,30,8
+Jack n Jill Potato Crisp,3.80,snack,9551002002002,24,6
+Oreo Original,4.50,snack,9551002002003,20,5
+KitKat 4-finger,3.00,snack,9551002002004,40,10
+Snickers,3.50,snack,9551002002005,40,10
+Maggi Curry,1.80,instant,9551003003001,72,20
+Nescafe 3in1,0.90,instant,9551003003002,100,20
+Marigold HL Milk 1L,8.50,dairy,9551004004001,15,5
+Gardenia White Bread,4.20,bakery,9551004004002,20,5
+Mamee Monster,1.50,snack,9551002002006,60,15

@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.database import init_db
-from app.routers import admin, auth, settings, users
+from app.routers import admin, auth, menu, settings, users
 
 UPLOADS_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
@@ -39,6 +39,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(admin.router)
 app.include_router(settings.router)
+app.include_router(menu.router)
 
 
 @app.get("/health")
