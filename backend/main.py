@@ -46,6 +46,7 @@ from app.routers import admin as admin_router  # noqa: E402
 from app.routers import auth as auth_router  # noqa: E402
 from app.routers import detect as detect_router  # noqa: E402
 from app.routers import menu as menu_router  # noqa: E402
+from app.routers import audit as audit_router  # noqa: E402
 from app.routers import customer as customer_router  # noqa: E402
 from app.routers import dashboard as dashboard_router  # noqa: E402
 from app.routers import inventory as inventory_router  # noqa: E402
@@ -57,6 +58,7 @@ from app.routers import supplier as supplier_router  # noqa: E402
 from app.routers import train as train_router  # noqa: E402
 from app.routers import transaction as transaction_router  # noqa: E402
 from app.routers import users as users_router  # noqa: E402
+from app.routers import ws as ws_router  # noqa: E402
 app.include_router(admin_router.router)
 app.include_router(auth_router.router)
 app.include_router(users_router.router)
@@ -72,8 +74,10 @@ app.include_router(po_router.router)
 app.include_router(inventory_router.router)
 app.include_router(customer_router.router)
 app.include_router(dashboard_router.router)
+app.include_router(audit_router.router)
+app.include_router(ws_router.router)
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "phase": "11", "stage": 2}
+    return {"status": "ok", "phase": "12", "stage": 2}
