@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
-import '../services/auth_service.dart';
 import '../widgets/theme_toggle.dart';
 import 'dashboard_screen.dart';
 import 'pos_screen.dart';
@@ -14,8 +13,12 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final usernameCtrl = TextEditingController();
-  final passwordCtrl = TextEditingController();
+  // Stage 2 cashier login: tenant_handle + username + 6-digit PIN.
+  final handleCtrl =
+      TextEditingController(text: 'brianchenjunhao');
+  final usernameCtrl =
+      TextEditingController(text: 'staff1.brianchenjunhao');
+  final pinCtrl = TextEditingController();
   bool loading = false;
   String? error;
 
@@ -25,13 +28,13 @@ class _LoginScreenState extends State<LoginScreen> {
       error = null;
     });
     try {
-      final user = await ApiService.login(
+      await ApiService.staffLogin(
+        handleCtrl.text.trim(),
         usernameCtrl.text.trim(),
-        passwordCtrl.text,
+        pinCtrl.text,
       );
-      AuthService.setUser(user);
       if (!mounted) return;
-      final dest = AuthService.isManager
+      final dest = Session.role == 'owner'
           ? const DashboardScreen()
           : const PosScreen();
       Navigator.pushReplacement(
@@ -61,23 +64,32 @@ class _LoginScreenState extends State<LoginScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
+                  controller: handleCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Shop handle',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
                   controller: usernameCtrl,
                   decoration: const InputDecoration(
                     labelText: 'Username',
                     border: OutlineInputBorder(),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 TextField(
-                  controller: passwordCtrl,
+                  controller: pinCtrl,
                   obscureText: true,
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
                   onSubmitted: (_) => _login(),
                   decoration: const InputDecoration(
-                    labelText: 'Password',
+                    labelText: '6-digit PIN',
                     border: OutlineInputBorder(),
                   ),
                 ),
-                const SizedBox(height: 16),
                 if (error != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
@@ -100,7 +112,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'Try: staff1 / staff123  ·  manager1 / manager123',
+                  'Dev seed: brianchenjunhao / staff1.brianchenjunhao / 123456',
                   style: TextStyle(fontSize: 11),
                 ),
               ],

@@ -18,7 +18,7 @@ from app.models import (
     Transaction,
     TransactionItem,
 )
-from app.services import audit, billplz
+from app.services import audit, billplz, ws_hub
 from app.services.billplz import BillplzConfigError
 from app.services.tx_numbering import next_number
 
@@ -338,3 +338,7 @@ async def _mark_paid(
         action="tx.paid", entity="transaction", entity_id=tx.id,
         meta={"via": via, "bill_id": raw.get("id")},
     )
+    await ws_hub.broadcast(tenant_id, "tx_paid", {
+        "tx_id": tx.id, "tx_number": tx.tx_number,
+        "total": str(tx.total), "via": via,
+    })

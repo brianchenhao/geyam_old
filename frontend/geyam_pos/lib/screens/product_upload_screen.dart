@@ -14,9 +14,11 @@ class ProductUploadScreen extends StatefulWidget {
 class _ProductUploadScreenState extends State<ProductUploadScreen> {
   final nameCtrl = TextEditingController();
   final priceCtrl = TextEditingController();
+  final stockCtrl = TextEditingController(text: '0');
   XFile? video;
-  bool uploading = false;
+  bool busy = false;
   String? message;
+  int? lastMenuItemId;
 
   Future<void> _pickVideo() async {
     final picker = ImagePicker();
@@ -24,28 +26,34 @@ class _ProductUploadScreenState extends State<ProductUploadScreen> {
     if (picked != null) setState(() => video = picked);
   }
 
-  Future<void> _upload() async {
+  Future<void> _createItemThenUpload() async {
     final name = nameCtrl.text.trim();
     final price = double.tryParse(priceCtrl.text);
-    if (name.isEmpty || price == null || price <= 0 || video == null) {
-      setState(() => message = 'Need name, price > 0, and a video.');
+    final stock = int.tryParse(stockCtrl.text) ?? 0;
+    if (name.isEmpty || price == null || price <= 0) {
+      setState(() => message = 'Need name and price > 0.');
       return;
     }
     setState(() {
-      uploading = true;
+      busy = true;
       message = null;
     });
     try {
-      final result = await ApiService.trainVideo(
-        name: name,
-        price: price,
-        video: video!,
+      final item = await ApiService.createMenuItem(
+        name: name, price: price, stockQty: stock,
       );
-      setState(() => message = 'Server: ${result['status'] ?? result.toString()}');
+      lastMenuItemId = item['id'] as int;
+      setState(() => message =
+          'Menu item #$lastMenuItemId created. ${video == null ? "Now pick a video and upload." : "Uploading video..."}');
+      if (video != null) {
+        final job = await ApiService.uploadMenuVideo(lastMenuItemId!, video!);
+        setState(() => message =
+            'Training job #${job['id']} queued for item #$lastMenuItemId (status: ${job['status']})');
+      }
     } catch (e) {
-      setState(() => message = 'Upload failed: $e');
+      setState(() => message = 'Error: $e');
     } finally {
-      if (mounted) setState(() => uploading = false);
+      if (mounted) setState(() => busy = false);
     }
   }
 
@@ -53,7 +61,7 @@ class _ProductUploadScreenState extends State<ProductUploadScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Train new product'),
+        title: const Text('Add product'),
         actions: const [ThemeToggle()],
       ),
       body: Center(
@@ -71,29 +79,39 @@ class _ProductUploadScreenState extends State<ProductUploadScreen> {
                     border: OutlineInputBorder(),
                   ),
                 ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: priceCtrl,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Price (RM)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _pickVideo,
-                        icon: const Icon(Icons.video_file),
-                        label: Text(video?.name ?? 'Pick video'),
+                      child: TextField(
+                        controller: priceCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: 'Price (RM)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        controller: stockCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Stock qty',
+                          border: OutlineInputBorder(),
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: _pickVideo,
+                  icon: const Icon(Icons.video_file),
+                  label: Text(video?.name ?? 'Pick training video (≤30s, ≤100MB)'),
+                ),
+                const SizedBox(height: 20),
                 if (message != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
@@ -103,20 +121,18 @@ class _ProductUploadScreenState extends State<ProductUploadScreen> {
                   width: double.infinity,
                   height: 48,
                   child: ElevatedButton(
-                    onPressed: uploading ? null : _upload,
-                    child: uploading
+                    onPressed: busy ? null : _createItemThenUpload,
+                    child: busy
                         ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Start training'),
+                            width: 22, height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : Text(video == null ? 'Create item' : 'Create + upload video'),
                   ),
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'Training runs in the background on the server.\n'
-                  'Check /model/status to see when it completes.',
+                  'Creates a menu_items row first; uploading a video then '
+                  'queues a training_job and auto-extracts a middle-frame thumbnail.',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 11),
                 ),

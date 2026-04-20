@@ -16,7 +16,7 @@ from sqlalchemy import select  # noqa: E402
 
 from app.database import SessionLocal, current_tenant_id  # noqa: E402
 from app.models import Transaction  # noqa: E402
-from app.services import audit  # noqa: E402
+from app.services import audit, ws_hub  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="[autovoid] %(asctime)s %(message)s")
 HEARTBEAT_SEC = int(os.getenv("AUTOVOID_INTERVAL_SEC", "60"))
@@ -46,6 +46,9 @@ async def sweep_once() -> int:
                               (datetime.utcnow() - tx.created_at).total_seconds()
                           )},
                 )
+                await ws_hub.broadcast(tx.tenant_id, "tx_autovoid", {
+                    "tx_id": tx.id, "tx_number": tx.tx_number,
+                })
             finally:
                 current_tenant_id.reset(tok)
         if stale:

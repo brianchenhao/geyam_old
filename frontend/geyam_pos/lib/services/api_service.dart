@@ -24,133 +24,193 @@ class ApiException implements Exception {
   String toString() => 'ApiException($statusCode): $message';
 }
 
+/// Holds the JWT minted by /auth/staff/login or /auth/google and the
+/// claim-derived role/tenant so UI can gate owner-only screens.
+class Session {
+  static String? token;
+  static int? tenantId;
+  static int? userId;
+  static String? role;
+  static String? tenantHandle;
+
+  static Map<String, String> authHeaders({bool json = true}) => {
+        if (token != null) 'Authorization': 'Bearer $token',
+        if (json) 'Content-Type': 'application/json',
+      };
+
+  static void clear() {
+    token = null;
+    tenantId = null;
+    userId = null;
+    role = null;
+    tenantHandle = null;
+  }
+}
+
 class ApiService {
   static Uri _uri(String path, [Map<String, String>? query]) =>
       Uri.parse('${ApiConfig.baseUrl}$path').replace(queryParameters: query);
 
-  static Map<String, dynamic> _decode(http.Response resp) {
-    if (resp.statusCode != 200) {
-      throw ApiException(resp.statusCode, resp.body);
+  static dynamic _decode(http.Response r) {
+    if (r.statusCode >= 400) {
+      throw ApiException(r.statusCode, r.body);
     }
-    return jsonDecode(resp.body) as Map<String, dynamic>;
-  }
-
-  static List<dynamic> _decodeList(http.Response resp) {
-    if (resp.statusCode != 200) {
-      throw ApiException(resp.statusCode, resp.body);
-    }
-    return jsonDecode(resp.body) as List<dynamic>;
+    if (r.body.isEmpty) return null;
+    return jsonDecode(r.body);
   }
 
   // ---------- auth ----------
-  static Future<Map<String, dynamic>> login(
-      String username, String password) async {
-    final resp = await http.post(
-      _uri('/auth/login'),
+
+  static Future<Map<String, dynamic>> staffLogin(
+      String tenantHandle, String username, String pin) async {
+    final r = await http.post(
+      _uri('/auth/staff/login'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'username': username, 'password': password}),
+      body: jsonEncode({
+        'tenant_handle': tenantHandle,
+        'username': username,
+        'pin': pin,
+      }),
     );
-    return _decode(resp);
+    final m = _decode(r) as Map<String, dynamic>;
+    Session.token = m['access_token'] as String;
+    Session.tenantId = m['tenant_id'] as int;
+    Session.userId = m['user_id'] as int;
+    Session.role = m['role'] as String;
+    Session.tenantHandle = tenantHandle;
+    return m;
+  }
+
+  static Future<Map<String, dynamic>> googleLogin(String idToken) async {
+    final r = await http.post(
+      _uri('/auth/google'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'id_token': idToken}),
+    );
+    final m = _decode(r) as Map<String, dynamic>;
+    Session.token = m['access_token'] as String;
+    Session.tenantId = m['tenant_id'] as int;
+    Session.userId = m['user_id'] as int;
+    Session.role = m['role'] as String;
+    return m;
   }
 
   // ---------- menu ----------
-  static Future<List<dynamic>> getMenu() async {
-    final resp = await http.get(_uri('/menu'));
-    return _decodeList(resp);
+
+  static Future<List<dynamic>> listMenu() async {
+    final r = await http.get(_uri('/menu'), headers: Session.authHeaders(json: false));
+    return _decode(r) as List<dynamic>;
   }
 
-  // ---------- detect (POS scan) ----------
-  // conf=0.005 because the current 2-class model has very low confidences;
-  // tune up once more classes are trained.
-  static Future<List<dynamic>> detect(XFile image,
-      {double conf = 0.005}) async {
-    final req = http.MultipartRequest('POST', _uri('/detect', {'conf': '$conf'}));
-    final bytes = await image.readAsBytes();
-    req.files.add(http.MultipartFile.fromBytes(
-      'image',
-      bytes,
-      filename: image.name,
-      contentType: _mediaTypeFor(image.name, 'image', 'jpeg'),
-    ));
-    final streamed = await req.send();
-    final body = await streamed.stream.bytesToString();
-    if (streamed.statusCode != 200) {
-      throw ApiException(streamed.statusCode, body);
-    }
-    final decoded = jsonDecode(body) as Map<String, dynamic>;
-    if (decoded.containsKey('error')) {
-      throw ApiException(200, decoded['error'] as String);
-    }
-    return decoded['detections'] as List<dynamic>;
-  }
-
-  // ---------- transaction ----------
-  static Future<Map<String, dynamic>> createTransaction({
-    int? staffId,
-    required List<Map<String, dynamic>> items,
-  }) async {
-    final resp = await http.post(
-      _uri('/transaction'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'staff_id': staffId, 'items': items}),
-    );
-    return _decode(resp);
-  }
-
-  // ---------- sales ----------
-  static Future<List<dynamic>> getSales({int limit = 50}) async {
-    final resp = await http.get(_uri('/sales', {'limit': '$limit'}));
-    return _decodeList(resp);
-  }
-
-  static Future<Map<String, dynamic>> getSalesSummary() async {
-    final resp = await http.get(_uri('/sales/summary'));
-    return _decode(resp);
-  }
-
-  // ---------- forecast ----------
-  static Future<List<dynamic>> getForecast() async {
-    final resp = await http.get(_uri('/forecast'));
-    return _decodeList(resp);
-  }
-
-  // ---------- ask LLM ----------
-  static Future<Map<String, dynamic>> ask(String question) async {
-    final resp = await http.post(
-      _uri('/ask'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'question': question}),
-    );
-    return _decode(resp);
-  }
-
-  // ---------- training upload ----------
-  static Future<Map<String, dynamic>> trainVideo({
+  static Future<Map<String, dynamic>> createMenuItem({
     required String name,
     required double price,
-    required XFile video,
+    String? category,
+    String? barcode,
+    int stockQty = 0,
+    int reorderPoint = 5,
   }) async {
-    final req = http.MultipartRequest('POST', _uri('/train/video'));
-    req.fields['name'] = name;
-    req.fields['price'] = price.toString();
-    final bytes = await video.readAsBytes();
+    final r = await http.post(
+      _uri('/menu'),
+      headers: Session.authHeaders(),
+      body: jsonEncode({
+        'name': name,
+        'price': price,
+        'category': category,
+        'barcode': barcode,
+        'stock_qty': stockQty,
+        'reorder_point': reorderPoint,
+      }),
+    );
+    return _decode(r) as Map<String, dynamic>;
+  }
+
+  static Future<Map<String, dynamic>> uploadMenuVideo(int itemId, XFile video) async {
+    final req = http.MultipartRequest('POST', _uri('/menu/$itemId/video'));
+    req.headers['Authorization'] = 'Bearer ${Session.token}';
     req.files.add(http.MultipartFile.fromBytes(
-      'video',
-      bytes,
+      'file', await video.readAsBytes(),
       filename: video.name,
       contentType: _mediaTypeFor(video.name, 'video', 'mp4'),
     ));
-    final streamed = await req.send();
-    final body = await streamed.stream.bytesToString();
-    if (streamed.statusCode != 200) {
-      throw ApiException(streamed.statusCode, body);
-    }
+    final s = await req.send();
+    final body = await s.stream.bytesToString();
+    if (s.statusCode >= 400) throw ApiException(s.statusCode, body);
     return jsonDecode(body) as Map<String, dynamic>;
   }
 
-  // ---------- model status ----------
-  static Future<Map<String, dynamic>> getModelStatus() async {
-    final resp = await http.get(_uri('/model/status'));
-    return _decode(resp);
+  // ---------- detect (POS scan) ----------
+
+  /// Returns {items: [...], shortlists: [...], notes: [...]}
+  static Future<Map<String, dynamic>> detect(XFile image) async {
+    final req = http.MultipartRequest('POST', _uri('/detect'));
+    req.headers['Authorization'] = 'Bearer ${Session.token}';
+    req.files.add(http.MultipartFile.fromBytes(
+      'file', await image.readAsBytes(),
+      filename: image.name,
+      contentType: _mediaTypeFor(image.name, 'image', 'jpeg'),
+    ));
+    final s = await req.send();
+    final body = await s.stream.bytesToString();
+    if (s.statusCode >= 400) throw ApiException(s.statusCode, body);
+    return jsonDecode(body) as Map<String, dynamic>;
+  }
+
+  // ---------- transactions ----------
+
+  static Future<Map<String, dynamic>> createTransaction({
+    required List<Map<String, dynamic>> items,
+    int? customerId,
+    String paymentMethod = 'qr',
+  }) async {
+    final r = await http.post(
+      _uri('/transaction'),
+      headers: Session.authHeaders(),
+      body: jsonEncode({
+        'items': items,
+        'customer_id': customerId,
+        'payment_method': paymentMethod,
+      }),
+    );
+    return _decode(r) as Map<String, dynamic>;
+  }
+
+  static Future<List<dynamic>> listTransactions({int limit = 50}) async {
+    final r = await http.get(
+      _uri('/transaction', {'limit': '$limit'}),
+      headers: Session.authHeaders(json: false),
+    );
+    return _decode(r) as List<dynamic>;
+  }
+
+  // ---------- dashboard / forecast / ask ----------
+
+  static Future<Map<String, dynamic>> dashboard() async {
+    final r = await http.get(_uri('/dashboard'), headers: Session.authHeaders(json: false));
+    return _decode(r) as Map<String, dynamic>;
+  }
+
+  static Future<List<dynamic>> forecast() async {
+    final r = await http.get(_uri('/forecast'), headers: Session.authHeaders(json: false));
+    return _decode(r) as List<dynamic>;
+  }
+
+  static Future<Map<String, dynamic>> ask(String question) async {
+    final r = await http.post(
+      _uri('/ask'),
+      headers: Session.authHeaders(),
+      body: jsonEncode({'question': question}),
+    );
+    return _decode(r) as Map<String, dynamic>;
+  }
+
+  // ---------- audit ----------
+
+  static Future<Map<String, dynamic>> audit({int limit = 50, int offset = 0}) async {
+    final r = await http.get(
+      _uri('/audit', {'limit': '$limit', 'offset': '$offset'}),
+      headers: Session.authHeaders(json: false),
+    );
+    return _decode(r) as Map<String, dynamic>;
   }
 }

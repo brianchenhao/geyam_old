@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
-import '../services/auth_service.dart';
-import '../widgets/sales_chart.dart';
 import '../widgets/theme_toggle.dart';
+import 'audit_screen.dart';
 import 'login_screen.dart';
+import 'pos_screen.dart';
 import 'product_upload_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -15,8 +15,7 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  Map<String, dynamic>? summary;
-  List<dynamic> sales = [];
+  Map<String, dynamic>? dash;
   List<Map<String, dynamic>> forecast = [];
   bool loading = true;
   String? loadError;
@@ -38,14 +37,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
     try {
       final results = await Future.wait([
-        ApiService.getSalesSummary(),
-        ApiService.getSales(),
-        ApiService.getForecast(),
+        ApiService.dashboard(),
+        ApiService.forecast(),
       ]);
       setState(() {
-        summary = results[0] as Map<String, dynamic>;
-        sales = results[1] as List<dynamic>;
-        forecast = (results[2] as List<dynamic>)
+        dash = results[0] as Map<String, dynamic>;
+        forecast = (results[1] as List<dynamic>)
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
       });
@@ -65,9 +62,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
     try {
       final result = await ApiService.ask(q);
-      setState(() => askAnswer = result['answer'] as String? ??
-          result['error'] as String? ??
-          'No answer');
+      setState(() => askAnswer = result['answer'] as String? ?? 'No answer');
     } catch (e) {
       setState(() => askAnswer = 'Error: $e');
     } finally {
@@ -76,7 +71,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _logout() {
-    AuthService.clear();
+    Session.clear();
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -87,20 +82,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('GEYAM Dashboard · ${AuthService.username ?? "manager"}'),
+        title: Text('GEYAM · ${Session.tenantHandle ?? "tenant ${Session.tenantId}"}'),
         actions: [
+          IconButton(
+            tooltip: 'POS',
+            icon: const Icon(Icons.point_of_sale),
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const PosScreen())),
+          ),
+          IconButton(
+            tooltip: 'Products',
+            icon: const Icon(Icons.video_call),
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const ProductUploadScreen())),
+          ),
+          IconButton(
+            tooltip: 'Audit log',
+            icon: const Icon(Icons.manage_history),
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const AuditScreen())),
+          ),
           IconButton(
             tooltip: 'Refresh',
             icon: const Icon(Icons.refresh),
             onPressed: loading ? null : _refresh,
-          ),
-          IconButton(
-            tooltip: 'Train new product',
-            icon: const Icon(Icons.video_call),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ProductUploadScreen()),
-            ),
           ),
           const ThemeToggle(),
           IconButton(
@@ -119,13 +124,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _summaryCards(),
-                      const SizedBox(height: 24),
-                      _section('Forecast (predicted next 7 days)',
-                          SizedBox(height: 240, child: SalesChart(forecast: forecast))),
-                      const SizedBox(height: 24),
-                      _section('Recent sales', _salesTable()),
-                      const SizedBox(height: 24),
+                      _cards(),
+                      const SizedBox(height: 16),
+                      _section('Top items (last 7d)', _topItems()),
+                      const SizedBox(height: 16),
+                      _section('Per-item forecast', _forecastTable()),
+                      const SizedBox(height: 16),
                       _section('Ask the AI', _askBox()),
                     ],
                   ),
@@ -133,99 +137,98 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _summaryCards() {
-    final s = summary ?? {};
-    final topItems = (s['top_selling_items'] as List?) ?? [];
-    final topName =
-        topItems.isEmpty ? '—' : (topItems.first['name'] as String);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth > 700;
-        final cards = [
-          _summaryCard('Total revenue',
-              'RM ${(s['total_revenue'] as num? ?? 0).toStringAsFixed(2)}'),
-          _summaryCard('Transactions', '${s['total_transactions'] ?? 0}'),
-          _summaryCard('Top seller', topName),
-        ];
-        if (wide) {
-          return Row(children: [
-            for (final c in cards) ...[Expanded(child: c), const SizedBox(width: 12)],
-          ]..removeLast());
-        }
-        return Column(
-          children: [
-            for (final c in cards) ...[c, const SizedBox(height: 12)],
-          ]..removeLast(),
-        );
-      },
-    );
+  Widget _cards() {
+    final d = dash ?? {};
+    final cards = [
+      _card('Revenue today', 'RM ${d['revenue_today'] ?? 0}'),
+      _card('Tx today', '${d['tx_count_today'] ?? 0}'),
+      _card('Revenue 7d', 'RM ${d['revenue_7d'] ?? 0}'),
+      _card('Low stock', '${d['low_stock_count'] ?? 0}'),
+    ];
+    return LayoutBuilder(builder: (ctx, cons) {
+      final wide = cons.maxWidth > 700;
+      if (wide) {
+        return Row(children: [
+          for (final c in cards) ...[Expanded(child: c), const SizedBox(width: 12)],
+        ]..removeLast());
+      }
+      return Column(children: [
+        for (final c in cards) ...[c, const SizedBox(height: 12)],
+      ]..removeLast());
+    });
   }
 
-  Widget _summaryCard(String label, String value) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: const TextStyle(fontSize: 12)),
-            const SizedBox(height: 8),
-            Text(value,
-                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          ],
+  Widget _card(String label, String value) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: const TextStyle(fontSize: 12)),
+              const SizedBox(height: 8),
+              Text(value,
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            ],
+          ),
         ),
-      ),
-    );
-  }
+      );
 
-  Widget _section(String title, Widget child) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title,
-                style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            child,
-          ],
+  Widget _section(String title, Widget child) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              child,
+            ],
+          ),
         ),
-      ),
+      );
+
+  Widget _topItems() {
+    final top = (dash?['top_items_7d'] as List?) ?? [];
+    if (top.isEmpty) return const Text('No paid sales in the last 7 days.');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final i in top)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(children: [
+              Expanded(child: Text(i['name'] as String)),
+              Text('${i['units']} units'),
+            ]),
+          ),
+      ],
     );
   }
 
-  Widget _salesTable() {
-    if (sales.isEmpty) return const Text('No sales yet.');
+  Widget _forecastTable() {
+    if (forecast.isEmpty) return const Text('No forecast yet.');
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      child: DataTable(
-        columns: const [
-          DataColumn(label: Text('ID')),
-          DataColumn(label: Text('When')),
-          DataColumn(label: Text('Items')),
-          DataColumn(label: Text('Total')),
-        ],
-        rows: [
-          for (final tx in sales)
-            DataRow(cells: [
-              DataCell(Text('${tx['id']}')),
-              DataCell(Text(_formatDate(tx['created_at'] as String?))),
-              DataCell(Text('${(tx['items'] as List).length}')),
-              DataCell(Text('RM ${(tx['total'] as num).toStringAsFixed(2)}')),
-            ]),
-        ],
-      ),
+      child: DataTable(columns: const [
+        DataColumn(label: Text('Item')),
+        DataColumn(label: Text('Daily forecast')),
+        DataColumn(label: Text('Reorder point')),
+        DataColumn(label: Text('EOQ')),
+        DataColumn(label: Text('Anomaly')),
+      ], rows: [
+        for (final f in forecast)
+          DataRow(cells: [
+            DataCell(Text(f['name'] as String)),
+            DataCell(Text('${f['daily_forecast']}')),
+            DataCell(Text('${f['reorder_point']}')),
+            DataCell(Text('${f['eoq']}')),
+            DataCell(Text(f['is_anomaly'] == true
+                ? 'z=${f['anomaly_z']} ⚠'
+                : 'z=${f['anomaly_z']}')),
+          ]),
+      ]),
     );
-  }
-
-  String _formatDate(String? iso) {
-    if (iso == null) return '—';
-    final dt = DateTime.tryParse(iso);
-    if (dt == null) return iso;
-    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
-        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 
   Widget _askBox() {
@@ -235,7 +238,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         TextField(
           controller: askCtrl,
           decoration: const InputDecoration(
-            hintText: 'e.g. Should I restock vanhouten?',
+            hintText: 'e.g. What should I restock first?',
             border: OutlineInputBorder(),
           ),
           onSubmitted: (_) => _ask(),
@@ -247,10 +250,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             onPressed: asking ? null : _ask,
             icon: asking
                 ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
+                    width: 16, height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.send),
             label: const Text('Ask'),
           ),
