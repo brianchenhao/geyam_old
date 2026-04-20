@@ -1,8 +1,13 @@
 from contextlib import asynccontextmanager
 
+from pathlib import Path
+
 from dotenv import load_dotenv
 
-load_dotenv()  # reads backend/.env; must run before app.* modules read env
+# Load backend/.env first (if present), then geyam/.env as fallback.
+# Must run before app.* modules read env.
+load_dotenv()
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

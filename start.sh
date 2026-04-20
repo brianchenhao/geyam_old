@@ -48,7 +48,7 @@ fi
 
 
 
-echo "==> 4/4  Starting FastAPI on http://localhost:8000 ..."
-echo "    (Ctrl+C to stop. Open another terminal and run: curl http://localhost:8000/health )"
-exec "$VENV_BIN/uvicorn" main:app --reload --host 0.0.0.0 --port 8000
+echo "==> 4/4  Starting FastAPI on http://localhost:9000 ..."
+echo "    (Ctrl+C to stop. Open another terminal and run: curl http://localhost:9000/health )"
+exec "$VENV_BIN/uvicorn" main:app --reload --host 0.0.0.0 --port 9000
 
