@@ -42,11 +42,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Stage 2 routers land phase-by-phase starting in Phase 2 (auth, admin).
-# Stage 1 routers are parked in app/routers/ for reference; do not import until
-# they are rewritten to be tenant-scoped.
+from app.routers import admin as admin_router  # noqa: E402
+app.include_router(admin_router.router)
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "phase": "1", "stage": 2}
+    return {"status": "ok", "phase": "2", "stage": 2}

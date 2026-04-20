@@ -1,6 +1,6 @@
-from app.models.menu_item import MenuItem
-from app.models.model_version import ModelVersion
-from app.models.transaction import Transaction, TransactionItem
+"""Stage 2 ORM registrations. Stage 1 models (menu_item, transaction, model_version)
+are parked — they will be re-landed tenant-scoped in later phases."""
+from app.models.tenant import Tenant
 from app.models.user import User
 
-__all__ = ["User", "MenuItem", "Transaction", "TransactionItem", "ModelVersion"]
+__all__ = ["Tenant", "User"]
