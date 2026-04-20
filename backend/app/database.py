@@ -1,3 +1,4 @@
+"""Async SQLAlchemy engine. Schema is owned by Alembic — do NOT call create_all."""
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -12,7 +13,6 @@ class Base(DeclarativeBase):
 
 
 async def init_db() -> None:
-    from app import models  # noqa: F401  — register tables with Base.metadata
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Alembic migrations run on container startup (see Dockerfile CMD).
+    # This function is kept for API compatibility; it intentionally does nothing.
+    return

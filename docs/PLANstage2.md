@@ -37,7 +37,7 @@ TX numbering       : GY{YYYYMMDD}-{N} per-tenant sequence (e.g. GY20260420-0042)
 Paid TX recovery   : owner-only "manager override void" with reason (restores stock, audits)
 Receipt            : digital always; email auto on paid if customer attached; manual email always
 Receipt branding   : shop name + owner contact + logo + itemized + total + payment + footer
-Email sender       : noreply@geyam.com (SPF + DKIM set up in Hostinger DNS, verified in Resend)
+Email sender       : noreply@geyam.com (SPF + DKIM set up in Cloudflare DNS, verified in Resend)
 Detection cascade  : YOLO (≥0.60) → MediaPipe+category-shortlist → OpenAI gpt-4o-mini
 OpenAI quota       : 50 calls/tenant/day, configurable per tenant
 Low-confidence UX  : yellow badge, tap to confirm/replace
@@ -1290,10 +1290,11 @@ PHASE 0 — Pre-deployment external setup (do this first, offline from code)
      - https://geyam.com/auth/callback
      - http://localhost:XXXX/auth/callback (Flutter dev)
      Save GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET to .env
-  B. Hostinger DNS for geyam.com:
+  B. Cloudflare DNS for geyam.com (Cloudflare is the active nameserver):
      - Add SPF TXT record (Resend will provide)
-     - Add DKIM CNAME records (Resend will provide)
-     - Keep existing A / CNAME for web + Cloudflare
+     - Add DKIM TXT/CNAME records (Resend will provide)
+     - Set the Resend records to DNS-only (grey cloud), NOT proxied (orange cloud) — Cloudflare will rewrite proxied email records and break verification
+     - Keep existing A / CNAME that point geyam.com to Hostinger static hosting
   C. Resend dashboard:
      - Verify geyam.com domain (takes 5-30 min after DNS)
      - Create noreply@geyam.com sender
