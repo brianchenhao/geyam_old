@@ -11,7 +11,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app.database import init_db
 from app.routers import (
-    admin, auth, detect, menu, payments, receipts, settings, train, transaction, users,
+    admin, auth, customers, dashboard, detect, inventory, menu, payments,
+    purchase_orders, receipts, settings, suppliers, train, transaction, users,
 )
 
 UPLOADS_DIR = Path(__file__).resolve().parent / "uploads"
@@ -47,6 +48,11 @@ app.include_router(detect.router)
 app.include_router(transaction.router)
 app.include_router(payments.router)
 app.include_router(receipts.router)
+app.include_router(suppliers.router)
+app.include_router(customers.router)
+app.include_router(purchase_orders.router)
+app.include_router(inventory.router)
+app.include_router(dashboard.router)
 
 
 @app.get("/health")

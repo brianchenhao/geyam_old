@@ -1,87 +1,37 @@
-"""Moving-average sales forecast.
+"""EWMA sales forecast + safety stock.
 
-Computes per-product sales stats over a fixed window (14 days by default),
-split into two 7-day halves to derive a simple trend direction.
-One aggregate SQL query does the heavy lifting; everything else is Python math.
+EWMA(alpha) = alpha * x_t + (1-alpha) * EWMA_{t-1}
+safety_stock = z * sigma * sqrt(lead_time_days)     (z=1.645 for 95% service)
 """
-from datetime import datetime, timedelta
-
-from sqlalchemy import case, func, select
-
-from app.database import SessionLocal
-from app.models.menu_item import MenuItem
-from app.models.transaction import Transaction, TransactionItem
-
-WINDOW_DAYS = 14
-RECENT_DAYS = 7
-MIN_UNITS_FOR_CONFIDENCE = 3
+import math
+import statistics
 
 
-async def compute_forecast() -> list[dict]:
-    end = datetime.now()
-    start = end - timedelta(days=WINDOW_DAYS)
-    mid = end - timedelta(days=RECENT_DAYS)
+def ewma(values: list[float], alpha: float = 0.3) -> float:
+    if not values:
+        return 0.0
+    s = float(values[0])
+    for v in values[1:]:
+        s = alpha * float(v) + (1 - alpha) * s
+    return s
 
-    async with SessionLocal() as session:
-        items = (
-            await session.scalars(
-                select(MenuItem)
-                .where(MenuItem.is_active.is_(True))
-                .order_by(MenuItem.id)
-            )
-        ).all()
 
-        agg_stmt = (
-            select(
-                TransactionItem.menu_item_id,
-                func.sum(TransactionItem.quantity).label("total"),
-                func.sum(
-                    case(
-                        (Transaction.created_at >= mid, TransactionItem.quantity),
-                        else_=0,
-                    )
-                ).label("recent"),
-                func.sum(
-                    case(
-                        (Transaction.created_at < mid, TransactionItem.quantity),
-                        else_=0,
-                    )
-                ).label("prev"),
-            )
-            .join(Transaction, TransactionItem.transaction_id == Transaction.id)
-            .where(Transaction.created_at >= start)
-            .where(Transaction.created_at < end)
-            .group_by(TransactionItem.menu_item_id)
-        )
-        rows = (await session.execute(agg_stmt)).all()
+def forecast_daily(daily_series: list[float], alpha: float = 0.3) -> float:
+    """Expected units sold on the next day."""
+    return ewma(daily_series, alpha)
 
-    by_id = {
-        r.menu_item_id: (int(r.total or 0), int(r.recent or 0), int(r.prev or 0))
-        for r in rows
-    }
 
-    out: list[dict] = []
-    for mi in items:
-        total, recent, prev = by_id.get(mi.id, (0, 0, 0))
-        avg_daily = total / WINDOW_DAYS
-        predicted = avg_daily * 7
-        if recent > prev:
-            trend = "up"
-        elif recent < prev:
-            trend = "down"
-        else:
-            trend = "flat"
-        note = "insufficient data" if total < MIN_UNITS_FOR_CONFIDENCE else None
-        out.append(
-            {
-                "menu_item_id": mi.id,
-                "name": mi.name,
-                "days_analyzed": WINDOW_DAYS,
-                "total_sold": total,
-                "avg_daily_sales": round(avg_daily, 2),
-                "predicted_next_week": round(predicted, 1),
-                "trend": trend,
-                "note": note,
-            }
-        )
-    return out
+def safety_stock(daily_series: list[float], *, lead_time_days: int = 3,
+                 z: float = 1.645) -> float:
+    if len(daily_series) < 2:
+        return 0.0
+    sigma = statistics.stdev(daily_series)
+    return z * sigma * math.sqrt(max(lead_time_days, 1))
+
+
+def reorder_point(
+    daily_series: list[float], *, lead_time_days: int = 3, z: float = 1.645
+) -> float:
+    return forecast_daily(daily_series) * lead_time_days + safety_stock(
+        daily_series, lead_time_days=lead_time_days, z=z,
+    )
