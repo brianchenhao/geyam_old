@@ -13,12 +13,12 @@
 # The port must match whatever start.sh currently binds (today: 8508).
 # Update `service:` when you bump the port.
 
-tunnel: REPLACE_WITH_TUNNEL_UUID
-credentials-file: C:\Users\brian\.cloudflared\REPLACE_WITH_TUNNEL_UUID.json
+tunnel: 2dcee935-cfcb-4fcc-a2eb-e82dafe65f49
+credentials-file: C:\Users\brian\.cloudflared\2dcee935-cfcb-4fcc-a2eb-e82dafe65f49.json
 
 ingress:
   - hostname: api.geyam.com
-    service: http://localhost:8508
+    service: http://localhost:8509
     originRequest:
       # POST /detect uploads images (~2-4 MB). Default is 100 MB so we're fine,
       # but be explicit since the 30-sec video uploads can hit 100 MB.
