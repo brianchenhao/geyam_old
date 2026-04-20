@@ -27,9 +27,10 @@ class TenantSettings(Base):
     tenant_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True
     )
-    billplz_api_key: Mapped[str | None] = mapped_column(String(255))
+    # Fernet-encrypted — ciphertext is ~1.6× plain length, so Text avoids truncation
+    billplz_api_key: Mapped[str | None] = mapped_column(Text)
     billplz_collection_id: Mapped[str | None] = mapped_column(String(100))
-    billplz_xsign_key: Mapped[str | None] = mapped_column(String(255))
+    billplz_xsign_key: Mapped[str | None] = mapped_column(Text)
     billplz_mode: Mapped[str] = mapped_column(String(10), default="sandbox")
     logo_path: Mapped[str | None] = mapped_column(Text)
     receipt_footer: Mapped[str] = mapped_column(

@@ -72,7 +72,8 @@ async def create_bill(
         r = await c.post(
             f"{_base_url(mode)}/bills", data=payload, auth=(api_key, "")
         )
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise RuntimeError(f"Billplz {r.status_code}: {r.text[:500]}")
     return r.json()
 
 

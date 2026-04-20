@@ -187,12 +187,23 @@ async def create_qr(
         raise HTTPException(status.HTTP_409_CONFLICT, f"tx not pending ({tx.status})")
 
     settings = await session.get(TenantSettings, p.tenant_id)
+    # Billplz requires at least one of email/mobile. Prefer the attached
+    # customer; otherwise fall back to the tenant's contact email or a
+    # placeholder so sandbox validation passes.
+    cust_email = cust_mobile = None
+    if tx.customer_id:
+        _c = await session.get(Customer, tx.customer_id)
+        if _c:
+            cust_email = _c.email
+            cust_mobile = _c.phone
+    fallback_email = cust_email or (settings.shop_contact_email if settings else None) \
+        or "noreply@geyam.com"
     try:
         cb_base = os.getenv("BILLPLZ_CALLBACK_BASE", "https://api.geyam.com")
         bill = await billplz.create_bill(
             settings,
             name=f"Sale {tx.tx_number}",
-            email=None, mobile=None,
+            email=fallback_email, mobile=cust_mobile,
             amount_sen=int(Decimal(str(tx.total)) * 100),
             description=f"Sale {tx.tx_number}",
             callback_url=f"{cb_base}/payments/webhook",
