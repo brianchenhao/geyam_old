@@ -1,87 +1,51 @@
-"""Moving-average sales forecast.
-
-Computes per-product sales stats over a fixed window (14 days by default),
-split into two 7-day halves to derive a simple trend direction.
-One aggregate SQL query does the heavy lifting; everything else is Python math.
-"""
-from datetime import datetime, timedelta
-
-from sqlalchemy import case, func, select
-
-from app.database import SessionLocal
-from app.models.menu_item import MenuItem
-from app.models.transaction import Transaction, TransactionItem
-
-WINDOW_DAYS = 14
-RECENT_DAYS = 7
-MIN_UNITS_FOR_CONFIDENCE = 3
+"""EWMA demand forecast + safety stock + ROP + EOQ."""
+import math
+from collections import defaultdict
+from datetime import date, timedelta
+from typing import Iterable
 
 
-async def compute_forecast() -> list[dict]:
-    end = datetime.now()
-    start = end - timedelta(days=WINDOW_DAYS)
-    mid = end - timedelta(days=RECENT_DAYS)
+def ewma(series: list[float], alpha: float = 0.3) -> float:
+    if not series:
+        return 0.0
+    s = series[0]
+    for x in series[1:]:
+        s = alpha * x + (1 - alpha) * s
+    return s
 
-    async with SessionLocal() as session:
-        items = (
-            await session.scalars(
-                select(MenuItem)
-                .where(MenuItem.is_active.is_(True))
-                .order_by(MenuItem.id)
-            )
-        ).all()
 
-        agg_stmt = (
-            select(
-                TransactionItem.menu_item_id,
-                func.sum(TransactionItem.quantity).label("total"),
-                func.sum(
-                    case(
-                        (Transaction.created_at >= mid, TransactionItem.quantity),
-                        else_=0,
-                    )
-                ).label("recent"),
-                func.sum(
-                    case(
-                        (Transaction.created_at < mid, TransactionItem.quantity),
-                        else_=0,
-                    )
-                ).label("prev"),
-            )
-            .join(Transaction, TransactionItem.transaction_id == Transaction.id)
-            .where(Transaction.created_at >= start)
-            .where(Transaction.created_at < end)
-            .group_by(TransactionItem.menu_item_id)
-        )
-        rows = (await session.execute(agg_stmt)).all()
+def safety_stock(series: list[float], service_z: float = 1.65, lead_time_days: int = 7) -> float:
+    if len(series) < 2:
+        return 0.0
+    mean = sum(series) / len(series)
+    var = sum((x - mean) ** 2 for x in series) / (len(series) - 1)
+    sigma = math.sqrt(var)
+    return service_z * sigma * math.sqrt(lead_time_days)
 
-    by_id = {
-        r.menu_item_id: (int(r.total or 0), int(r.recent or 0), int(r.prev or 0))
-        for r in rows
-    }
 
-    out: list[dict] = []
-    for mi in items:
-        total, recent, prev = by_id.get(mi.id, (0, 0, 0))
-        avg_daily = total / WINDOW_DAYS
-        predicted = avg_daily * 7
-        if recent > prev:
-            trend = "up"
-        elif recent < prev:
-            trend = "down"
-        else:
-            trend = "flat"
-        note = "insufficient data" if total < MIN_UNITS_FOR_CONFIDENCE else None
-        out.append(
-            {
-                "menu_item_id": mi.id,
-                "name": mi.name,
-                "days_analyzed": WINDOW_DAYS,
-                "total_sold": total,
-                "avg_daily_sales": round(avg_daily, 2),
-                "predicted_next_week": round(predicted, 1),
-                "trend": trend,
-                "note": note,
-            }
-        )
-    return out
+def reorder_point(ewma_daily: float, lead_time_days: int, ss: float) -> float:
+    return ewma_daily * lead_time_days + ss
+
+
+def eoq(annual_demand: float, order_cost: float = 20.0, holding_cost_per_unit: float = 0.50) -> int:
+    if annual_demand <= 0 or holding_cost_per_unit <= 0:
+        return 0
+    q = math.sqrt(2 * annual_demand * order_cost / holding_cost_per_unit)
+    return int(round(q))
+
+
+def daily_series_from_rows(rows: Iterable[tuple[date, float]], window_days: int = 30) -> list[float]:
+    end = date.today()
+    by_day = defaultdict(float)
+    for d, q in rows:
+        by_day[d] += float(q)
+    return [by_day[end - timedelta(days=(window_days - 1 - i))] for i in range(window_days)]
+
+
+def z_score_anomaly(today_value: float, window: list[float]) -> float:
+    if len(window) < 3:
+        return 0.0
+    mean = sum(window) / len(window)
+    var = sum((x - mean) ** 2 for x in window) / (len(window) - 1)
+    sigma = math.sqrt(var) if var > 0 else 1e-6
+    return (today_value - mean) / sigma
