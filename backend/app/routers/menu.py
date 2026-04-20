@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.deps import Principal, get_session, require_role
 from app.models import MenuItem, TrainingJob
 from app.services import audit
-from app.services.video import extract_middle_frame
+from app.services.video import extract_middle_frame, probe_duration_sec
 
 router = APIRouter(prefix="/menu", tags=["menu"])
 
@@ -312,6 +312,14 @@ async def upload_video(
     ext = (Path(file.filename or "").suffix or ".mp4").lower()
     video_path = videos_dir / f"{item.id}{ext}"
     video_path.write_bytes(data)
+
+    dur = probe_duration_sec(str(video_path))
+    if dur is not None and dur > 30.0:
+        video_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            f"video longer than 30s ({dur:.1f}s)",
+        )
 
     # Middle-frame extraction (Phase 6 will enqueue a real training job on top of this).
     frame_dir = UPLOADS_ROOT / str(p.tenant_id) / "products"

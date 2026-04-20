@@ -48,11 +48,11 @@ fi
 
 
 
-echo "==> 4/4  Starting FastAPI on http://localhost:8503 ..."
-echo "    (Ctrl+C to stop. Open another terminal and run: curl http://localhost:8503/health )"
+echo "==> 4/4  Starting FastAPI on http://localhost:8504 ..."
+echo "    (Ctrl+C to stop. Open another terminal and run: curl http://localhost:8504/health )"
 # Put the venv first on PATH so uvicorn's --reload subprocess uses THIS venv
 # (not a neighbor project's .venv that happens to also have uvicorn installed).
 export PATH="$(pwd)/$VENV_BIN:$PATH"
 if [ -x "$VENV_BIN/python.exe" ]; then VENV_PY="$VENV_BIN/python.exe"; else VENV_PY="$VENV_BIN/python"; fi
-exec "$VENV_PY" -m uvicorn main:app --reload --host 0.0.0.0 --port 8503
+exec "$VENV_PY" -m uvicorn main:app --reload --host 0.0.0.0 --port 8504
 

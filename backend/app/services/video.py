@@ -28,7 +28,7 @@ def _probe_frame_count(video_path: str) -> int | None:
         return None
 
 
-def _probe_duration_sec(video_path: str) -> float | None:
+def probe_duration_sec(video_path: str) -> float | None:
     try:
         out = subprocess.run(
             [_ffmpeg(), "-i", video_path], capture_output=True, text=True, timeout=30,
@@ -47,7 +47,7 @@ def extract_middle_frame(video_path: str, out_image_path: str) -> None:
     """Write a single JPEG of the middle frame. Raises on ffmpeg failure."""
     Path(out_image_path).parent.mkdir(parents=True, exist_ok=True)
 
-    dur = _probe_duration_sec(video_path)
+    dur = probe_duration_sec(video_path)
     mid = max(dur / 2.0, 0.0) if dur else 0.0
     cmd = [
         _ffmpeg(), "-y", "-ss", f"{mid:.3f}", "-i", video_path,
