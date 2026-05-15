@@ -15,7 +15,7 @@ from app.services.audit import audit
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
 ADJUST_REASONS = {
-    "adjust_damage", "adjust_loss", "adjust_theft",
+    "adjust_restock", "adjust_damage", "adjust_loss", "adjust_theft",
     "adjust_miscount", "adjust_expired", "adjust_other",
 }
 
@@ -32,7 +32,7 @@ class InventoryRow(BaseModel):
 class AdjustIn(BaseModel):
     menu_item_id: int
     delta: int  # can be positive or negative
-    reason: str = Field(pattern="^adjust_(damage|loss|theft|miscount|expired|other)$")
+    reason: str = Field(pattern="^adjust_(restock|damage|loss|theft|miscount|expired|other)$")
     note: Optional[constr(max_length=500)] = None
 
 
@@ -50,6 +50,22 @@ async def list_inventory(tenant_id: int = Depends(get_tenant),
             low_stock=(m.stock_qty or 0) <= (m.reorder_point or 0),
         ))
     return out
+
+
+@router.get("/low-stock", dependencies=[Depends(require_role("owner"))])
+async def low_stock(tenant_id: int = Depends(get_tenant),
+                     session: AsyncSession = Depends(get_session)) -> list[InventoryRow]:
+    rows = (await session.execute(
+        select(MenuItem)
+        .where(MenuItem.is_active.is_(True))
+        .where(MenuItem.stock_qty <= MenuItem.reorder_point)
+        .order_by(MenuItem.stock_qty)
+    )).scalars().all()
+    return [InventoryRow(
+        id=m.id, name=m.name, stock_qty=m.stock_qty or 0,
+        reorder_point=m.reorder_point or 0, avg_cost=m.avg_cost or Decimal(0),
+        low_stock=True,
+    ) for m in rows]
 
 
 @router.post("/adjust", dependencies=[Depends(require_role("owner"))])

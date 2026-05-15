@@ -1,8 +1,13 @@
 """Phase 9 — receipt PDF + email send."""
+import base64
+import os
 from datetime import datetime
 from decimal import Decimal
+from io import BytesIO
 from pathlib import Path
 from typing import Optional
+
+import qrcode
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -10,15 +15,16 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import tenant_context
 from app.config import BASE_DIR, UPLOADS_DIR
 from app.deps import get_current_user, get_session, get_tenant
-from app.models.customer import Customer
 from app.models.menu_item import MenuItem
 from app.models.receipt import Receipt
 from app.models.tenant import Tenant
 from app.models.tenant_settings import TenantSettings
 from app.models.transaction import Transaction, TransactionItem
 from app.models.user import User
+from app.security import decode_token, issue_receipt_token
 from app.services.audit import audit
 from app.services.receipt_pdf import render_receipt
 from app.services.resend_mailer import send_receipt_email
@@ -27,7 +33,7 @@ router = APIRouter(prefix="/receipts", tags=["receipts"])
 
 
 class EmailIn(BaseModel):
-    to: Optional[EmailStr] = None  # if None, uses customer's saved email
+    to: Optional[EmailStr] = None  # if None, uses tx.receipt_email (typed at checkout)
 
 
 async def _build_receipt_pdf(session: AsyncSession, tenant_id: int, tx: Transaction) -> Path:
@@ -55,12 +61,6 @@ async def _build_receipt_pdf(session: AsyncSession, tenant_id: int, tx: Transact
         if u:
             cashier_label = u.username
 
-    customer_label = None
-    if tx.customer_id:
-        c = (await session.execute(select(Customer).where(Customer.id == tx.customer_id))).scalars().first()
-        if c:
-            customer_label = c.name or c.email or "Customer"
-
     logo_path = None
     if ts and ts.logo_path:
         rel = ts.logo_path.lstrip("/").replace("uploads/", "", 1)
@@ -73,7 +73,7 @@ async def _build_receipt_pdf(session: AsyncSession, tenant_id: int, tx: Transact
         tx_number=tx.tx_number,
         paid_at=tx.paid_at.strftime("%Y-%m-%d %H:%M") if tx.paid_at else None,
         cashier=cashier_label,
-        customer=customer_label,
+        recipient_email=tx.receipt_email,
         shop_name=tenant.name if tenant else "Shop",
         shop_email=(ts.shop_contact_email if ts else None),
         shop_phone=(ts.shop_contact_phone if ts else None),
@@ -109,6 +109,60 @@ async def get_pdf(
     return FileResponse(path, media_type="application/pdf", filename=f"{tx.tx_number}.pdf")
 
 
+@router.get("/{tx_id}/qr")
+async def get_receipt_qr(
+    tx_id: int,
+    tenant_id: int = Depends(get_tenant),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """QR code encoding the digital receipt PDF URL, for customer scan."""
+    tx = (await session.execute(select(Transaction).where(Transaction.id == tx_id))).scalars().first()
+    if not tx:
+        raise HTTPException(status_code=404, detail="transaction not found")
+    if tx.status != "paid":
+        raise HTTPException(status_code=400, detail="digital receipt only available for paid transactions")
+
+    public_base = os.getenv("PUBLIC_API_BASE", "https://api.geyam.com")
+    token = issue_receipt_token(tenant_id=tenant_id, tx_id=tx_id)
+    pdf_url = f"{public_base}/receipts/public?token={token}"
+    img = qrcode.make(pdf_url)
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    qr_png = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    return {"qr_png": qr_png, "pdf_url": pdf_url, "tx_number": tx.tx_number}
+
+
+@router.get("/public")
+async def get_public_receipt(
+    token: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Public endpoint reached by scanning the receipt QR.
+    The signed token embedded in the URL authorizes read-only access to
+    exactly one receipt PDF for 30 days. No login required."""
+    try:
+        payload = decode_token(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="invalid or expired receipt token")
+    if payload.get("type") != "receipt":
+        raise HTTPException(status_code=401, detail="wrong token type")
+    tenant_id = payload.get("tenant_id")
+    tx_id = payload.get("tx_id")
+    if not isinstance(tenant_id, int) or not isinstance(tx_id, int):
+        raise HTTPException(status_code=401, detail="malformed receipt token")
+
+    tenant_context.set_current_tenant_id(tenant_id)
+
+    tx = (await session.execute(select(Transaction).where(Transaction.id == tx_id))).scalars().first()
+    if not tx:
+        raise HTTPException(status_code=404, detail="transaction not found")
+    if tx.status != "paid":
+        raise HTTPException(status_code=400, detail="receipt only available for paid transactions")
+
+    path = await _build_receipt_pdf(session, tenant_id, tx)
+    return FileResponse(path, media_type="application/pdf", filename=f"{tx.tx_number}.pdf")
+
+
 @router.post("/{tx_id}/email")
 async def email_receipt(
     tx_id: int,
@@ -121,13 +175,9 @@ async def email_receipt(
     if not tx:
         raise HTTPException(status_code=404, detail="transaction not found")
 
-    to = body.to
-    if to is None and tx.customer_id:
-        c = (await session.execute(select(Customer).where(Customer.id == tx.customer_id))).scalars().first()
-        if c and c.email:
-            to = c.email
+    to = body.to or tx.receipt_email
     if not to:
-        raise HTTPException(status_code=400, detail="no recipient (pass 'to' or attach a customer with email)")
+        raise HTTPException(status_code=400, detail="no recipient (pass 'to' or set receipt_email on the transaction)")
 
     path = await _build_receipt_pdf(session, tenant_id, tx)
     tenant = (await session.execute(select(Tenant).where(Tenant.id == tenant_id))).scalars().first()

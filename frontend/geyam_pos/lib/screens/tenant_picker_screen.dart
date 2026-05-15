@@ -35,7 +35,7 @@ class _TenantPickerScreenState extends State<TenantPickerScreen> {
   Future<void> _pick(int id) async {
     try {
       final r = await ApiService.post('/admin/tenants/$id/impersonate');
-      ApiService.setAuth(
+      await ApiService.setAuth(
         token: r['access_token'], tenantId: r['tenant_id'], role: 'owner',
       );
       if (!mounted) return;

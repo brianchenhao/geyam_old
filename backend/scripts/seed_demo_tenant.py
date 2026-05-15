@@ -9,10 +9,9 @@ Creates:
   - tenant_settings with sandbox Billplz creds from backend/.env
   - users: 2 cashiers (staff1.demo / staff2.demo) with PIN='876543' (bcrypt hashed)
   - 15 menu_items from data/sample_menu.csv
-  - 3 suppliers
-  - 10 customers with name+email
   - 500 transactions spread across last 60 days (paid status)
     - random cashier + random 1-3 items per tx
+    - ~30% have a receipt_email populated (no persistent customer record)
     - 2 injected anomaly days (revenue z > 2)
   - stock_movements rows for each 'sale' and for the initial stocking
   - model_versions row pointing at yolov8n.pt baseline (notes='seed baseline')
@@ -36,11 +35,9 @@ from sqlalchemy import delete, select  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
 from app.deps import bypass_tenant_scope  # noqa: E402
 from app.models.audit_log import AuditLog  # noqa: E402
-from app.models.customer import Customer  # noqa: E402
 from app.models.menu_item import MenuItem  # noqa: E402
 from app.models.model_version import ModelVersion  # noqa: E402
 from app.models.stock_movement import StockMovement  # noqa: E402
-from app.models.supplier import Supplier  # noqa: E402
 from app.models.tenant import Tenant  # noqa: E402
 from app.models.tenant_settings import TenantSettings  # noqa: E402
 from app.models.transaction import Transaction, TransactionItem  # noqa: E402
@@ -58,18 +55,12 @@ CASHIER_PIN = "876543"  # plan spec says 123456 but that's blocklisted by API; u
 CSV_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "sample_menu.csv"
 
 
-SUPPLIERS = [
-    ("MyMart Wholesale", "Ali", "ali@mymart.com", "+60312345678"),
-    ("DB Distributor", "Siti", "siti@dbd.com", "+60387654321"),
-    ("Perfect Foods", "Ahmad", "ahmad@perfect.com", "+60399887766"),
-]
-
-CUSTOMERS = [
-    ("Brian", "brian@test.com"), ("Aisha", "aisha@test.com"),
-    ("Kumar", "kumar@test.com"), ("Mei", "mei@test.com"),
-    ("Hakim", "hakim@test.com"), ("Wei", "wei@test.com"),
-    ("Nur", "nur@test.com"), ("Tan", "tan@test.com"),
-    ("Siti", "siti.c@test.com"), ("Lee", "lee@test.com"),
+# Emails rotated through transactions.receipt_email for ~30% of seeded TX — the
+# plan no longer tracks a persistent customers table.
+RECEIPT_EMAILS = [
+    "brian@test.com", "aisha@test.com", "kumar@test.com", "mei@test.com",
+    "hakim@test.com", "wei@test.com", "nur@test.com", "tan@test.com",
+    "siti.c@test.com", "lee@test.com",
 ]
 
 
@@ -153,23 +144,12 @@ async def seed() -> int:
         await session.flush()
         print(f"menu: {len(items)} items")
 
-        # Initial stock movements for each item (one-off PO "received" on day 0)
+        # Initial stock movements for each item (one-off manual restock on day 0)
         for m in items:
             session.add(StockMovement(
                 tenant_id=t.id, menu_item_id=m.id, delta=m.stock_qty or 0,
-                reason="po_receive", ref_type="seed", note="initial stock",
+                reason="adjust_restock", ref_type="seed", note="initial stock",
             ))
-
-        # Suppliers
-        for name, contact, email, phone in SUPPLIERS:
-            session.add(Supplier(tenant_id=t.id, name=name, contact=contact, email=email, phone=phone))
-
-        # Customers
-        customers: list[Customer] = []
-        for n, e in CUSTOMERS:
-            c = Customer(tenant_id=t.id, name=n, email=e)
-            session.add(c); customers.append(c)
-        await session.flush()
 
         # 500 transactions across 60 days. Two injected anomaly days (heavy revenue).
         rng = random.Random(42)
@@ -201,13 +181,11 @@ async def seed() -> int:
 
             # ~70% cash, 30% qr
             method = "cash" if rng.random() < 0.7 else "qr"
-            customer_id = None
-            if rng.random() < 0.3:
-                customer_id = rng.choice(customers).id
+            receipt_email = rng.choice(RECEIPT_EMAILS) if rng.random() < 0.3 else None
 
             tx = Transaction(
                 tenant_id=t.id, tx_number=tx_num,
-                staff_id=staff.id, customer_id=customer_id,
+                staff_id=staff.id, receipt_email=receipt_email,
                 total=total, payment_method=method, payment_ref=None, status="paid",
                 created_at=base, paid_at=base,
             )

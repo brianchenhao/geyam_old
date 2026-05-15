@@ -23,7 +23,7 @@ class StockMovement(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "reason IN ('sale','po_receive','adjust_damage','adjust_loss',"
+            "reason IN ('sale','po_receive','adjust_restock','adjust_damage','adjust_loss',"
             "'adjust_theft','adjust_miscount','adjust_expired','adjust_other','void_restore')",
             name="stock_movements_reason_check",
         ),

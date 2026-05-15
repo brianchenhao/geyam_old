@@ -13,14 +13,26 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+import asyncio
+
 from app.config import UPLOADS_DIR
 from app.database import init_db
+from app.services.ws_broker import run_subscriber
+from app.websocket import hub
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    yield
+    broker_task = asyncio.create_task(run_subscriber(hub))
+    try:
+        yield
+    finally:
+        broker_task.cancel()
+        try:
+            await broker_task
+        except Exception:
+            pass
 
 
 app = FastAPI(title="GEYAM API", lifespan=lifespan)
@@ -47,14 +59,11 @@ from app.routers import auth as auth_router  # noqa: E402
 from app.routers import detect as detect_router  # noqa: E402
 from app.routers import menu as menu_router  # noqa: E402
 from app.routers import audit as audit_router  # noqa: E402
-from app.routers import customer as customer_router  # noqa: E402
 from app.routers import dashboard as dashboard_router  # noqa: E402
 from app.routers import inventory as inventory_router  # noqa: E402
 from app.routers import payment as payment_router  # noqa: E402
-from app.routers import purchase_order as po_router  # noqa: E402
 from app.routers import receipt as receipt_router  # noqa: E402
 from app.routers import settings as settings_router  # noqa: E402
-from app.routers import supplier as supplier_router  # noqa: E402
 from app.routers import train as train_router  # noqa: E402
 from app.routers import transaction as transaction_router  # noqa: E402
 from app.routers import users as users_router  # noqa: E402
@@ -69,10 +78,7 @@ app.include_router(detect_router.router)
 app.include_router(transaction_router.router)
 app.include_router(payment_router.router)
 app.include_router(receipt_router.router)
-app.include_router(supplier_router.router)
-app.include_router(po_router.router)
 app.include_router(inventory_router.router)
-app.include_router(customer_router.router)
 app.include_router(dashboard_router.router)
 app.include_router(audit_router.router)
 app.include_router(ws_router.router)
@@ -80,4 +86,4 @@ app.include_router(ws_router.router)
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "phase": "12", "stage": 2}
+    return {"status": "ok", "phase": "13", "stage": 2}

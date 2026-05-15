@@ -1,13 +1,16 @@
 """Owner-only cashier management.
 
-- POST /users      → create cashier (auto username = staffN.<handle>, bcrypt PIN)
+- POST /users      → create cashier (custom username, or auto = staffN.<handle> if blank; bcrypt PIN)
 - PATCH /users/{id} → reset PIN or toggle is_active
 - DELETE /users/{id} → soft-delete
 - GET /users       → list cashiers for this tenant
 """
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, constr
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import bypass_tenant_scope, get_current_user, get_session, get_tenant, require_role
@@ -24,9 +27,12 @@ TRIVIAL_PINS = {
     "123456","654321","012345",
 }
 
+USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{1,31}$")
+
 
 class CashierCreateIn(BaseModel):
     pin: constr(strip_whitespace=True, min_length=6, max_length=6)
+    username: constr(strip_whitespace=True, min_length=0, max_length=32) | None = None
 
 
 class CashierPatchIn(BaseModel):
@@ -71,17 +77,30 @@ async def create_cashier(body: CashierCreateIn,
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant missing")
 
-    n_existing = (await session.execute(
-        select(func.count()).select_from(User).where(User.role == "cashier")
-    )).scalar() or 0
-    username = f"staff{n_existing + 1}.{tenant.handle}"
+    submitted = (body.username or "").strip().lower()
+    if submitted:
+        if not USERNAME_RE.match(submitted):
+            raise HTTPException(
+                status_code=400,
+                detail="Username must be 2–32 chars, lowercase letters/digits/._-, starting with a letter or digit",
+            )
+        username = submitted
+    else:
+        n_existing = (await session.execute(
+            select(func.count()).select_from(User).where(User.role == "cashier")
+        )).scalar() or 0
+        username = f"staff{n_existing + 1}.{tenant.handle}"
 
     cashier = User(
         tenant_id=tenant_id, username=username, role="cashier",
         pin_hash=hash_pin(body.pin), is_active=True,
     )
     session.add(cashier)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail=f"Username '{username}' is already taken")
     await audit(session, action="user.create", tenant_id=tenant_id,
                 user_id=user_claims.get("user_id"), entity="user", entity_id=cashier.id,
                 meta={"username": username})

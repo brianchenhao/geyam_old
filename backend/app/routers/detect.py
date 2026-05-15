@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 from app.deps import get_current_user, get_tenant
 from app.services.detection.cascade import detect
+from app.websocket import hub
 
 router = APIRouter(tags=["detect"])
 
@@ -45,4 +46,18 @@ async def detect_endpoint(
         result = detect(tenant_id=tenant_id, image_bytes=data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"detection failed: {type(e).__name__}")
+
+    low_conf_items = [i for i in result.get("items", []) if i.get("needs_confirm")]
+    if low_conf_items:
+        await hub.publish(tenant_id, {
+            "type": "low_conf",
+            "count": len(low_conf_items),
+            "items": [
+                {"name": i.get("name") or i.get("label"),
+                 "confidence": i.get("confidence"),
+                 "source": i.get("source")}
+                for i in low_conf_items
+            ],
+        })
+
     return DetectOut(**result)

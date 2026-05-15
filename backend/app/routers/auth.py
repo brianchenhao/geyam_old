@@ -16,16 +16,28 @@ from app.security import (
     decode_token,
     issue_access_token,
     issue_admin_token,
+    issue_signup_token,
     verify_pin,
 )
+import re
 from app.services.audit import audit
-from app.services.google_oauth import verify_google_id_token
+from app.services.google_oauth import verify_google_access_token, verify_google_id_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 class GoogleLoginIn(BaseModel):
-    id_token: str
+    id_token: str | None = None
+    access_token: str | None = None
+
+
+class GoogleSignupIn(BaseModel):
+    signup_token: str
+    shop_name: constr(strip_whitespace=True, min_length=2, max_length=100)
+    handle: constr(strip_whitespace=True, min_length=2, max_length=50)
+
+
+HANDLE_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 
 
 class StaffLoginIn(BaseModel):
@@ -55,10 +67,15 @@ def _issue_refresh_token(*, tenant_id: int, user_id: int, role: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
-@router.post("/google", response_model=TokenOut)
+@router.post("/google")
 async def google_login(body: GoogleLoginIn, session: AsyncSession = Depends(get_session)):
     try:
-        claims = verify_google_id_token(body.id_token)
+        if body.id_token:
+            claims = verify_google_id_token(body.id_token)
+        elif body.access_token:
+            claims = verify_google_access_token(body.access_token)
+        else:
+            raise ValueError("id_token or access_token required")
     except Exception as e:
         async with bypass_tenant_scope():
             await audit(session, action="auth.login_fail", meta={"method": "google", "reason": str(e)[:200]})
@@ -80,10 +97,14 @@ async def google_login(body: GoogleLoginIn, session: AsyncSession = Depends(get_
             select(Tenant).where(Tenant.owner_email == email)
         )).scalars().first()
         if not tenant:
-            await audit(session, action="auth.login_fail",
-                        meta={"method": "google", "reason": "no_tenant", "email": email})
+            await audit(session, action="auth.signup_start",
+                        meta={"method": "google", "email": email})
             await session.commit()
-            raise HTTPException(status_code=403, detail="no tenant for this email — contact admin")
+            return {
+                "needs_onboarding": True,
+                "signup_token": issue_signup_token(email=email, sub=sub),
+                "email": email,
+            }
 
         user = (await session.execute(
             select(User).where(User.tenant_id == tenant.id, User.role == "owner")
@@ -98,6 +119,52 @@ async def google_login(body: GoogleLoginIn, session: AsyncSession = Depends(get_
             user.google_sub = sub
         await audit(session, action="auth.login_success", tenant_id=tenant.id, user_id=user.id,
                     meta={"method": "google"})
+        await session.commit()
+
+    return TokenOut(
+        access_token=issue_access_token(tenant_id=tenant.id, user_id=user.id, role="owner"),
+        refresh_token=_issue_refresh_token(tenant_id=tenant.id, user_id=user.id, role="owner"),
+        role="owner", tenant_id=tenant.id, user_id=user.id,
+    )
+
+
+@router.post("/google/signup", response_model=TokenOut)
+async def google_signup(body: GoogleSignupIn, session: AsyncSession = Depends(get_session)):
+    try:
+        claims = decode_token(body.signup_token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="signup token invalid or expired")
+    if claims.get("type") != "signup":
+        raise HTTPException(status_code=401, detail="not a signup token")
+
+    email = claims["email"].lower()
+    sub = claims["sub"]
+    handle = body.handle.lower()
+    if not HANDLE_RE.match(handle):
+        raise HTTPException(status_code=400, detail="handle must be lowercase letters, digits, hyphen; 2-50 chars")
+
+    async with bypass_tenant_scope():
+        existing = (await session.execute(
+            select(Tenant).where((Tenant.handle == handle) | (Tenant.owner_email == email))
+        )).scalars().first()
+        if existing:
+            if existing.owner_email == email:
+                raise HTTPException(status_code=409, detail="you already have a shop — sign in instead")
+            raise HTTPException(status_code=409, detail="handle already taken — pick another")
+
+        tenant = Tenant(handle=handle, name=body.shop_name, owner_email=email)
+        session.add(tenant)
+        await session.flush()
+        user = User(
+            tenant_id=tenant.id, username=handle, email=email,
+            google_sub=sub, role="owner", is_active=True,
+        )
+        session.add(user)
+        await session.flush()
+        await audit(session, action="tenant.create", tenant_id=tenant.id, user_id=user.id,
+                    meta={"via": "self_signup", "email": email, "handle": handle})
+        await audit(session, action="auth.login_success", tenant_id=tenant.id, user_id=user.id,
+                    meta={"method": "google", "first_login": True})
         await session.commit()
 
     return TokenOut(

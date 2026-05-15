@@ -21,7 +21,9 @@ def _sessionmaker():
 def _tick(Maker):
     from app.models.audit_log import AuditLog
     from app.models.transaction import Transaction
+    from app.services.ws_broker import publish_sync
     cutoff = datetime.utcnow() - timedelta(minutes=TIMEOUT_MINUTES)
+    notify: list[tuple[int, int, str]] = []  # (tenant_id, tx_id, tx_number)
     with Maker() as s:
         stale = s.execute(
             select(Transaction).where(Transaction.status == "pending", Transaction.created_at < cutoff)
@@ -33,9 +35,17 @@ def _tick(Maker):
             s.add(AuditLog(tenant_id=tx.tenant_id, user_id=None, action="tx.auto_void",
                            entity="transaction", entity_id=tx.id,
                            meta={"tx_number": tx.tx_number}))
+            notify.append((tx.tenant_id, tx.id, tx.tx_number))
         if stale:
             print(f"[autovoid] voided {len(stale)} stale pending tx(s)", flush=True)
         s.commit()
+
+    for tenant_id, tx_id, tx_number in notify:
+        publish_sync(tenant_id, {
+            "type": "tx_autovoid",
+            "tx_id": tx_id,
+            "tx_number": tx_number,
+        })
 
 
 def main() -> None:

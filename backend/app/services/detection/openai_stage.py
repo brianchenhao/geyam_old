@@ -146,6 +146,7 @@ def _names_to_matches(names: list[str], menu_items: list[dict]) -> list[dict]:
                 "label": m["label"],
                 "menu_item_id": m["id"],
                 "name": m["name"],
+                "price": m.get("price", 0),
                 "confidence": 0.5,
                 "source": "openai",
                 "needs_confirm": True,

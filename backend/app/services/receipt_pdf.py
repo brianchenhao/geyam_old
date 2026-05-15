@@ -17,7 +17,7 @@ def render_receipt(
     tx_number: str,
     paid_at: Optional[str],
     cashier: str,
-    customer: Optional[str],
+    recipient_email: Optional[str],
     shop_name: str,
     shop_email: Optional[str],
     shop_phone: Optional[str],
@@ -52,7 +52,7 @@ def render_receipt(
     if paid_at:
         elems.append(Paragraph(f"Paid: {paid_at}", small))
     elems.append(Paragraph(f"Cashier: {cashier}", small))
-    elems.append(Paragraph(f"Customer: {customer or 'Walk-in'}", small))
+    elems.append(Paragraph(f"Receipt to: {recipient_email or 'Walk-in'}", small))
     elems.append(Spacer(1, 8))
 
     data = [["Item", "Qty", "Unit", "Total"]]

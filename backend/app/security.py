@@ -27,6 +27,36 @@ def issue_access_token(*, tenant_id: int, user_id: int, role: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
+SIGNUP_TOKEN_MINUTES = 10
+RECEIPT_TOKEN_DAYS = 30
+
+
+def issue_receipt_token(*, tenant_id: int, tx_id: int) -> str:
+    """Short-lived token embedded in the QR shown to paying customers.
+    Grants 30 days of read-only access to ONE specific receipt PDF, no login required."""
+    payload = {
+        "tenant_id": tenant_id,
+        "tx_id": tx_id,
+        "exp": datetime.now(timezone.utc) + timedelta(days=RECEIPT_TOKEN_DAYS),
+        "iat": datetime.now(timezone.utc),
+        "type": "receipt",
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def issue_signup_token(*, email: str, sub: str) -> str:
+    """Short-lived token issued to a verified Google user who has no tenant yet.
+    Exchanged at /auth/google/signup for a full owner JWT after they pick a shop name + handle."""
+    payload = {
+        "email": email,
+        "sub": sub,
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=SIGNUP_TOKEN_MINUTES),
+        "iat": datetime.now(timezone.utc),
+        "type": "signup",
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
 def issue_admin_token(*, email: str) -> str:
     """Admin tokens are NOT tenant-scoped — they can hit /admin/* only."""
     payload = {

@@ -27,10 +27,21 @@ env/
 Thumbs.db
 
 # ML / data (big files shouldn't go in git)
-backend/ml_models/*.pt
-backend/ml_models/runs/
-backend/training_data/images/
-backend/training_data/labels/
-backend/training_data/_tmp/
-backend/training_data/data.yaml
+backend/ml_models/
+backend/training_data/
+backend/uploads/
+backend/backups/
 backend/*.pt
+
+# Local planning / AI context — never committed, never pushed
+PLAN-*.md
+PLANstage*.md
+PLANstage1portfolio.md
+CLAUDE.md
+.claude/
+
+# Stray scratch
+docs/test_write.txt
+
+# Node (not used by geyam build)
+node_modules/

@@ -56,8 +56,21 @@ def fetch_bill(*, mode: str, api_key: str, bill_id: str) -> dict[str, Any]:
 
 
 def verify_webhook_signature(*, xsign_key: str, form_fields: dict[str, str], x_signature: str) -> bool:
-    """Billplz v3 webhook signing: sort keys, pipe-join as key1val1|key2val2|... then HMAC-SHA256."""
-    keys_skip = {"x_signature"}
-    payload = "|".join(f"{k}{form_fields[k]}" for k in sorted(form_fields.keys()) if k not in keys_skip)
-    expected = hmac.new(xsign_key.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    """Billplz v3 webhook X-Signature (per jomweb/billplz Signature::WEBHOOK_PARAMETERS):
+    fixed field order, pipe-joined as key1val1|key2val2|..., HMAC-SHA256 with key as string.
+    Required fields contribute even when missing (empty value); optional ones only if present."""
+    webhook_order = [
+        "amount", "collection_id", "due_at", "email", "id", "mobile", "name",
+        "paid_amount", "paid_at", "paid", "state", "transaction_id", "transaction_status", "url",
+    ]
+    required = {
+        "amount", "collection_id", "due_at", "email", "id", "mobile", "name",
+        "paid_amount", "paid_at", "paid", "state", "url",
+    }
+    parts = []
+    for attr in webhook_order:
+        if attr in form_fields or attr in required:
+            parts.append(f"{attr}{form_fields.get(attr, '')}")
+    payload = "|".join(parts).encode()
+    expected = hmac.new(xsign_key.encode(), payload, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, x_signature)

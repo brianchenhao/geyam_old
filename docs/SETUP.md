@@ -82,7 +82,6 @@ Creates:
 - Settings with Billplz sandbox creds (encrypted)
 - Two cashiers `staff1.demo`, `staff2.demo` (PIN `876543`)
 - 15 menu items + initial stock
-- 3 suppliers, 10 customers
 - 500 paid transactions across 60 days (with 2 anomaly days)
 - 1 active `model_versions` row
 
@@ -154,17 +153,7 @@ For the laptop acting as the production server:
 
 ---
 
-## 9. Rollback to Stage 1 demo
-
-```
-docker compose down
-cd "C:/Programming (Local)/FYP Claude/geyam"   # (the frozen Stage 1 clone lives here per CLAUDE.md)
-uvicorn main:app --host 0.0.0.0 --port 9000
-```
-
----
-
-## 10. Healthcheck commands (copy-paste)
+## 9. Healthcheck commands (copy-paste)
 
 ```
 # backend

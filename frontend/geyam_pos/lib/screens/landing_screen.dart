@@ -1,17 +1,46 @@
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 
 import '../config/theme.dart';
+import '../widgets/sakura_overlay.dart';
+import 'info_screen.dart';
 import 'login_screen.dart';
 
 /// Dark-mode hero landing page (web only). Matches designreference/dark mode.webp.
-class LandingScreen extends StatelessWidget {
+class LandingScreen extends StatefulWidget {
   const LandingScreen({super.key});
+
+  @override
+  State<LandingScreen> createState() => _LandingScreenState();
+}
+
+class _LandingScreenState extends State<LandingScreen> {
+  late final VideoPlayerController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.asset('assets/videos/demo.mp4')
+      ..setLooping(true)
+      ..setVolume(0)
+      ..initialize().then((_) {
+        if (!mounted) return;
+        setState(() {});
+        _controller.play();
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF050510),
-      body: SafeArea(
+      backgroundColor: const Color(0xFF0A1428),
+      body: Stack(children: [const Positioned.fill(child: SakuraOverlay()), SafeArea(
         child: Column(
           children: [
             // Top nav
@@ -59,7 +88,9 @@ class LandingScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 24),
                         TextButton(
-                          onPressed: () {},
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const InfoScreen()),
+                          ),
                           child: const Text('Learn More  →', style: TextStyle(color: Colors.white)),
                         ),
                         const SizedBox(height: 32),
@@ -80,49 +111,128 @@ class LandingScreen extends StatelessWidget {
             ),
           ],
         ),
-      ),
+      )]),
     );
   }
 
   Widget _demoCard() => Container(
     height: 320,
     decoration: BoxDecoration(
-      color: const Color(0xFF0B0B1A),
+      color: const Color(0xFF121E3A),
       borderRadius: BorderRadius.circular(16),
       border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
     ),
-    child: const Center(
-      child: Text('demo.mp4 loop', style: TextStyle(color: Color(0xFF666666)))),
+    clipBehavior: Clip.antiAlias,
+    child: _controller.value.isInitialized
+        ? FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: _controller.value.size.width,
+              height: _controller.value.size.height,
+              child: VideoPlayer(_controller),
+            ),
+          )
+        : const Center(child: CircularProgressIndicator()),
   );
 
-  Widget _featureGrid() => Row(
-    children: [
-      Expanded(child: _featureTile('📷', 'Camera scan', 'YOLO + MediaPipe + OpenAI cascade')),
-      const SizedBox(width: 16),
-      Expanded(child: _featureTile('📦', 'Inventory', 'POs, suppliers, auto reorder points')),
-      const SizedBox(width: 16),
-      Expanded(child: _featureTile('📊', 'Dashboards', 'Live KPIs, forecasts, reports')),
-      const SizedBox(width: 16),
-      Expanded(child: _featureTile('🤖', 'AI Q&A', 'Ask about your shop. Local phi3:mini.')),
-    ],
-  );
-
-  Widget _featureTile(String emoji, String title, String body) => Container(
-    padding: const EdgeInsets.all(20),
-    decoration: BoxDecoration(
-      color: const Color(0xFF0B0B1A),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _featureGrid() => LayoutBuilder(builder: (context, constraints) {
+    final tiles = [
+      (context) => _featureTile(context, '📷', 'Camera scan', 'YOLO + MediaPipe + OpenAI cascade',
+        'Point your phone or webcam at a product and GEYAM identifies it instantly. A local YOLOv8 model (trained on your own shop\'s footage) handles the common items. If it\'s unsure, MediaPipe takes a second look. Still unsure? OpenAI vision acts as the final fallback — so even brand-new stock gets recognised on day one.'),
+      (context) => _featureTile(context, '📦', 'Inventory', 'Stock + auto reorder points',
+        'Track every SKU in real time. Adjust stock with one tap (restock, damage, loss, etc.) and let GEYAM flag items nearing their reorder point before you run out. Stock decrements automatically on every sale.'),
+      (context) => _featureTile(context, '📊', 'Dashboards', 'Live KPIs, forecasts, reports',
+        'A clean, live view of your shop: today\'s revenue, top sellers, slow movers, and 7/30-day forecasts. Export CSV reports for your accountant with one click.'),
+      (context) => _featureTile(context, '🤖', 'AI Q&A', 'Ask about your shop. Local phi3:mini.',
+        'Ask plain-English questions like "what sold best last Friday?" or "which item is running low?". Answered locally by phi3:mini — your data never leaves the laptop.'),
+    ];
+    final columns = constraints.maxWidth < 600 ? 2 : 4;
+    const gap = 16.0;
+    final tileWidth = (constraints.maxWidth - gap * (columns - 1)) / columns;
+    return Wrap(
+      spacing: gap,
+      runSpacing: gap,
       children: [
-        Text(emoji, style: const TextStyle(fontSize: 28)),
-        const SizedBox(height: 12),
-        Text(title, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 6),
-        Text(body, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12, height: 1.4)),
+        for (final builder in tiles)
+          SizedBox(width: tileWidth, child: builder(context)),
       ],
+    );
+  });
+
+  Widget _featureTile(BuildContext context, String emoji, String title, String body, String details) => Material(
+    color: Colors.transparent,
+    child: InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => _showFeatureDetails(context, emoji, title, details),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF121E3A),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 28)),
+            const SizedBox(height: 12),
+            Text(title, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            Text(body, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12, height: 1.4)),
+          ],
+        ),
+      ),
     ),
   );
+
+  void _showFeatureDetails(BuildContext context, String emoji, String title, String details) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.6),
+      builder: (ctx) => Dialog(
+        backgroundColor: const Color(0xFF121E3A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(emoji, style: const TextStyle(fontSize: 32)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(title,
+                        style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700)),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white70),
+                      onPressed: () => Navigator.of(ctx).pop(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Text(details,
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 14, height: 1.6)),
+                const SizedBox(height: 24),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.tonal(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Close'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

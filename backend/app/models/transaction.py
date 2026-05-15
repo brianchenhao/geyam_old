@@ -15,7 +15,7 @@ class Transaction(Base):
     tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     tx_number: Mapped[str] = mapped_column(String(30), nullable=False)
     staff_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"))
-    customer_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("customers.id"))
+    receipt_email: Mapped[Optional[str]] = mapped_column(String(255))
     total: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     payment_method: Mapped[str] = mapped_column(String(20), default="qr")
     payment_ref: Mapped[Optional[str]] = mapped_column(String(100))

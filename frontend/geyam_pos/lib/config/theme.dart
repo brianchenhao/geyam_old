@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 /// Stage 2 theme. Design reference: designreference/light mode.png and
 /// designreference/dark mode.webp. See docs/PLANstage2.md §Design Reference.
 class GeyamTheme {
+  // Landing-page palette — dark navy blue.
+  static const Color bgDark = Color(0xFF0A1428);
+  static const Color cardDark = Color(0xFF121E3A);
   static const Color navy = Color(0xFF000080);
   static const Color navyDark = Color(0xFF000066);
   static const Color navyCard = Color(0xFF00004D);
@@ -48,16 +51,20 @@ class GeyamTheme {
     colorScheme: const ColorScheme.dark(
       primary: Color(0xFF4DA6FF),
       secondary: accent,
-      surface: navyDark,
+      surface: cardDark,
       onPrimary: Colors.white,
       onSurface: primaryDarkText,
     ),
-    scaffoldBackgroundColor: navy,
+    scaffoldBackgroundColor: bgDark,
     appBarTheme: const AppBarTheme(
-      backgroundColor: navyDark,
+      backgroundColor: bgDark,
       foregroundColor: primaryDarkText,
       elevation: 0,
+      scrolledUnderElevation: 0,
     ),
-    cardTheme: const CardThemeData(color: navyCard, elevation: 0),
+    cardTheme: const CardThemeData(color: cardDark, elevation: 0),
+    dividerTheme: DividerThemeData(color: Colors.white.withValues(alpha: 0.08), space: 1),
+    drawerTheme: const DrawerThemeData(backgroundColor: bgDark),
+    dialogTheme: const DialogThemeData(backgroundColor: cardDark),
   );
 }

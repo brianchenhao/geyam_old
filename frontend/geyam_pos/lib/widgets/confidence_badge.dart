@@ -11,13 +11,32 @@ class ConfidenceBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color bg = needsConfirm ? GeyamTheme.warning : GeyamTheme.success;
-    final Color fg = Colors.black87;
+    final src = (source ?? 'yolo').toLowerCase();
+    final pct = confidence > 0 ? ' ${(confidence * 100).round()}%' : '';
+    final Color bg;
+    final Color fg;
+    final Color border;
+    final String label;
+    if (needsConfirm) {
+      bg = GeyamTheme.warning.withValues(alpha: 0.18);
+      fg = GeyamTheme.warning;
+      border = GeyamTheme.warning;
+      label = 'Confirm · $src$pct';
+    } else {
+      bg = GeyamTheme.success;
+      fg = Colors.white;
+      border = Colors.transparent;
+      label = 'Detected · $src$pct';
+    }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: border, width: needsConfirm ? 1 : 0),
+      ),
       child: Text(
-        '${(confidence * 100).toStringAsFixed(0)}%${source != null ? " · $source" : ""}',
+        label,
         style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.w600),
       ),
     );

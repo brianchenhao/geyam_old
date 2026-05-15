@@ -135,6 +135,15 @@ def run_batch(tenant_id: int) -> dict:
                 best_src = Path(out.save_dir) / "weights" / "best.pt"
                 if best_src.exists():
                     shutil.copy(best_src, model_out_path)
+                # Extract mAP50 as accuracy signal from the training results_dict.
+                try:
+                    rd = getattr(out, "results_dict", None) or {}
+                    for k in ("metrics/mAP50(B)", "metrics/mAP50", "metrics/mAP_0.5"):
+                        if k in rd and rd[k] is not None:
+                            accuracy = float(rd[k])
+                            break
+                except Exception:
+                    accuracy = None
             else:
                 baseline = Path(BASE_DIR) / "yolov8n.pt"
                 if not baseline.exists():
@@ -170,6 +179,11 @@ def run_batch(tenant_id: int) -> dict:
             for j in queued:
                 if j.status == "training":
                     j.status = "failed"; j.error = tb; j.finished_at = datetime.utcnow()
+            # TODO(phase-6 step-34): broadcast a WebSocket banner to the owner on
+            # failure. Cannot call hub.publish() from this sync RQ worker process
+            # — the hub is in-memory inside the FastAPI process. Frontend polls
+            # GET /train/jobs and surfaces failed status from there. A proper fix
+            # needs Redis pub/sub between the worker and FastAPI's startup loop.
         finally:
             _release_lock(s, tenant_id)
             s.commit()

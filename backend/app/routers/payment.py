@@ -2,9 +2,12 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from redis import Redis
+from rq import Queue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import REDIS_URL
 from app.deps import bypass_tenant_scope, get_session
 from app.models.menu_item import MenuItem
 from app.models.payment import Payment
@@ -14,8 +17,18 @@ from app.models.transaction import Transaction, TransactionItem
 from app.services.audit import audit
 from app.services.billplz import verify_webhook_signature
 from app.services.crypto import decrypt_secret
+from app.websocket import hub
 
 router = APIRouter(prefix="/payments", tags=["payments"])
+
+_receipt_queue: Queue | None = None
+
+
+def _get_receipt_queue() -> Queue:
+    global _receipt_queue
+    if _receipt_queue is None:
+        _receipt_queue = Queue("geyam", connection=Redis.from_url(REDIS_URL))
+    return _receipt_queue
 
 
 @router.post("/webhook")
@@ -24,15 +37,16 @@ async def webhook(request: Request, session: AsyncSession = Depends(get_session)
     fields = {k: str(v) for k, v in form.items()}
     x_signature = fields.pop("x_signature", "")
 
-    tenant_id_str = fields.get("reference_1") or ""
-    tx_id_str = fields.get("reference_2") or ""
-    try:
-        tenant_id = int(tenant_id_str)
-        tx_id = int(tx_id_str)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="bad references in webhook")
-
+    bill_id_in = fields.get("id") or ""
     async with bypass_tenant_scope():
+        existing_payment = (await session.execute(
+            select(Payment).where(Payment.bill_id == bill_id_in)
+        )).scalars().first()
+        if existing_payment is None:
+            raise HTTPException(status_code=400, detail="unknown bill_id")
+        tenant_id = existing_payment.tenant_id
+        tx_id = existing_payment.transaction_id
+
         ts = (await session.execute(
             select(TenantSettings).where(TenantSettings.tenant_id == tenant_id)
         )).scalars().first()
@@ -40,7 +54,6 @@ async def webhook(request: Request, session: AsyncSession = Depends(get_session)
             raise HTTPException(status_code=400, detail="tenant missing xsign key")
         xsign = decrypt_secret(ts.billplz_xsign_key) or ""
 
-        # The original posted payload includes x_signature — pass it back in for canonical signing
         signing_fields = dict(fields)
         if not verify_webhook_signature(xsign_key=xsign, form_fields=signing_fields, x_signature=x_signature):
             await audit(session, action="tx.pay_webhook_badsig", tenant_id=tenant_id,
@@ -90,8 +103,23 @@ async def webhook(request: Request, session: AsyncSession = Depends(get_session)
             await audit(session, action="tx.pay", tenant_id=tenant_id,
                         entity="transaction", entity_id=tx.id,
                         meta={"bill_id": bill_id})
-            # receipt email enqueue placeholder — Phase 9 will wire it here
+            try:
+                _get_receipt_queue().enqueue(
+                    "app.services.receipt_jobs.send_receipt_for_tx",
+                    tenant_id, tx.id, job_timeout="5m",
+                )
+            except Exception:
+                pass
 
         await session.commit()
+
+    if paid_bool:
+        await hub.publish(tenant_id, {
+            "type": "tx_paid",
+            "tx_id": tx.id,
+            "tx_number": tx.tx_number,
+            "total": str(tx.total),
+            "bill_id": bill_id,
+        })
 
     return {"status": "ok"}

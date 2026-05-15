@@ -1,12 +1,24 @@
 import 'package:flutter/material.dart';
 
 /// Rounded card with subtle border. Light = #F5F5F5, dark = #00004D.
+///
+/// Set [fill] to true when the parent provides bounded height and the child
+/// must take the remaining space (e.g. a scrollable table inside `Expanded`).
+/// Without `fill`, the child renders at its intrinsic height — which overflows
+/// a bounded parent once the child's content exceeds the available height.
 class SectionCard extends StatelessWidget {
   final String? title;
   final Widget child;
   final Widget? trailing;
+  final bool fill;
 
-  const SectionCard({super.key, this.title, required this.child, this.trailing});
+  const SectionCard({
+    super.key,
+    this.title,
+    required this.child,
+    this.trailing,
+    this.fill = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -23,6 +35,7 @@ class SectionCard extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: fill ? MainAxisSize.max : MainAxisSize.min,
         children: [
           if (title != null)
             Padding(
@@ -35,7 +48,7 @@ class SectionCard extends StatelessWidget {
                 ],
               ),
             ),
-          child,
+          if (fill) Expanded(child: child) else child,
         ],
       ),
     );
