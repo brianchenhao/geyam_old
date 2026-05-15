@@ -54,8 +54,6 @@ else
     --image "$IMAGE" \
     --size "$SIZE" \
     --enable-backups \
-    --enable-monitoring \
-    --enable-ipv6 \
     --ssh-keys "$DO_SSH_FINGERPRINT" \
     ${DO_VPC_UUID:+--vpc-uuid "$DO_VPC_UUID"} \
     --tag-names geyam,stage-3,prod \

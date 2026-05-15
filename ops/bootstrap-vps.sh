@@ -47,6 +47,20 @@ step setup-firewall.sh
 step set-timezone.sh
 step enable-unattended-upgrades.sh
 step setup-swap.sh
+
+# Defense in depth: harden-ssh.sh disables root + password auth, which means
+# the deploy user becomes the only way in. If create-deploy-user.sh's
+# authorized_keys copy silently failed, locking sshd would strand the box.
+# Recheck before the door slams.
+if [[ ! -s /home/deploy/.ssh/authorized_keys ]]; then
+  cat >&2 <<'EOF'
+ABORTING before harden-ssh.sh: /home/deploy/.ssh/authorized_keys is empty
+or missing. create-deploy-user.sh's key copy did not succeed. Investigate
+before re-running — running harden-ssh.sh now would lock everyone out.
+EOF
+  exit 1
+fi
+
 step harden-ssh.sh
 
 echo

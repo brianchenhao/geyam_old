@@ -19,6 +19,11 @@ fi
 
 . /etc/os-release  # exports $ID (ubuntu) and $VERSION_CODENAME (noble for 24.04)
 
+# Ensure the prereqs for fetching Docker's apt key are present. Ubuntu 24.04
+# cloud images ship curl + ca-certificates, but a minimal/custom image might not.
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install -y curl ca-certificates gnupg
+
 # Remove any old Ubuntu-packaged docker so it doesn't shadow the official one.
 for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do
   apt-get remove -y "$pkg" >/dev/null 2>&1 || true
