@@ -27,3 +27,4 @@ google-auth==2.35.0
 pydantic[email]==2.9.2
 pytest==8.3.3
 pytest-asyncio==0.24.0
+chenki @ git+https://github.com/brianchenhao/chenki.git@seed/phase1-3

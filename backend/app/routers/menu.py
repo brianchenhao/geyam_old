@@ -14,6 +14,7 @@ from app.config import UPLOADS_DIR
 from app.deps import get_current_user, get_session, get_tenant, require_role
 from app.models.menu_item import MenuItem
 from app.services.audit import audit
+from app.services.chenki_menu_ask import ask_menu
 
 router = APIRouter(prefix="/menu", tags=["menu"])
 
@@ -67,6 +68,34 @@ class BulkResult(BaseModel):
     inserted: int
     updated: int
     errors: list[str]
+
+
+class MenuAskIn(BaseModel):
+    question: constr(strip_whitespace=True, min_length=1, max_length=500)
+
+
+class MenuAskOut(BaseModel):
+    answer: str
+
+
+@router.post("/ask")
+async def menu_ask(body: MenuAskIn,
+                   tenant_id: int = Depends(get_tenant),
+                   session: AsyncSession = Depends(get_session)) -> MenuAskOut:
+    """Free-form Q&A over this tenant's active menu, answered by chenki-llm.
+
+    Cashier-facing: any authenticated user with a tenant context can ask.
+    Menu is loaded fresh per call so a tenant never sees another's items.
+    """
+    res = await session.execute(
+        select(MenuItem).where(MenuItem.is_active.is_(True)).order_by(MenuItem.name)
+    )
+    menu = [
+        {"name": m.name, "category": m.category, "price": str(m.price)}
+        for m in res.scalars().all()
+    ]
+    answer = await ask_menu(body.question, menu)
+    return MenuAskOut(answer=answer)
 
 
 @router.get("")
