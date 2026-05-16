@@ -1,0 +1,26 @@
+name: geyam
+
+# Production stack for the Geyam VPS (geyam-prod, SGP1).
+# Phase 2: db only — postgres for the Stage 2/3 schema + data.
+# Phase 4 will add: backend, caddy, redis.
+# Phase 8: chenki replaces ollama (LLM lives on a HF Space, not in a container here).
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: geyam-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER not set in .env.production}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set in .env.production}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB not set in .env.production}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
