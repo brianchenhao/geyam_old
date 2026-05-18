@@ -3,5 +3,20 @@
 __pycache__
 **/__pycache__
 *.pyc
-backups
+*.pyo
 .env
+.env.*
+
+# Runtime data dirs — mounted as volumes at run time, must NOT bake into image
+backups/
+uploads/
+ml_models/
+training_data/
+
+# Tests aren't shipped to prod
+tests/
+
+# Local Docker / OS junk
+.DS_Store
+Thumbs.db
+*.swp
