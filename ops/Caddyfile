@@ -1,0 +1,56 @@
+# Geyam VPS reverse proxy.
+#
+# Phase 4: TLS terminated here using a Cloudflare Origin Certificate (pinned
+# to the CF edge). Once Phase 5 enables the orange-cloud proxy on api.geyam.com,
+# all traffic to this origin will arrive via Cloudflare's IP ranges and be
+# encrypted end-to-end. Direct-IP requests from non-CF IPs will be rejected
+# at the VPS firewall (Phase 5 step 7).
+
+api.geyam.com {
+    tls /opt/geyam/caddy/cf-origin.crt /opt/geyam/caddy/cf-origin.key
+
+    encode gzip zstd
+
+    header {
+        # HSTS — once enabled, browsers refuse plaintext fallback for a year.
+        # Safe because we know the cert chain (CF Origin → CF edge → CF cert).
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+        # Strip Caddy's default Server: caddy banner from responses
+        -Server
+    }
+
+    reverse_proxy backend:8000 {
+        # Forward the real client IP so the backend (and Phase 7 antsilk
+        # middleware) sees something useful. CF-Connecting-IP is the source
+        # of truth once CF proxy is on; we pass it through unchanged.
+        header_up X-Forwarded-For {http.request.remote.host}
+        header_up X-Real-IP {http.request.remote.host}
+        header_up CF-Connecting-IP {http.request.header.CF-Connecting-IP}
+        header_up X-Forwarded-Proto https
+        header_up Host {host}
+
+        # Long timeouts for the menu-training upload + LLM ask paths.
+        transport http {
+            dial_timeout 10s
+            response_header_timeout 60s
+            read_timeout 120s
+        }
+    }
+
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 100mb
+            roll_keep 5
+        }
+        format json
+    }
+}
+
+# Plaintext on :80 — useful for direct-IP smoke tests during cutover dry-run
+# (before DNS flips and CF proxy is on). Redirect to https in normal operation.
+:80 {
+    redir https://api.geyam.com{uri} permanent
+}
