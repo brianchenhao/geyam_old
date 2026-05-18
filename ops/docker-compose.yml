@@ -1,9 +1,12 @@
 name: geyam
 
 # Production stack for the Geyam VPS (geyam-prod, SGP1).
-# Phase 2: db only — postgres for the Stage 2/3 schema + data.
-# Phase 4 will add: backend, caddy, redis.
-# Phase 8: chenki replaces ollama (LLM lives on a HF Space, not in a container here).
+# Phase 2: db.   Phase 4 (this revision): + backend + redis + caddy.
+# Phase 8: chenki is an external HF Space; no new container here.
+#
+# Bring up: docker compose -p geyam -f ops/docker-compose.yml --env-file .env.production up -d
+# Pull only: docker compose -p geyam -f ops/docker-compose.yml pull
+# (ops/deploy.sh wraps these with healthcheck-waiting + log tail.)
 
 services:
   db:
@@ -22,5 +25,67 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: geyam-redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    image: ghcr.io/brianchenhao/geyam-backend:latest
+    container_name: geyam-backend
+    env_file:
+      - ../.env.production
+    environment:
+      # Override compose-internal hostnames (the env file uses geyam-db hostname
+      # already, but keep these explicit so the compose graph is obvious).
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      ALEMBIC_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      MODEL_DIR: /app/ml_models
+      TRAINING_DATA_DIR: /app/training_data
+      UPLOADS_DIR: /app/uploads
+    volumes:
+      # Bind mounts so cutover-rsync writes into the same paths the container sees.
+      - /opt/geyam/uploads:/app/uploads
+      - /opt/geyam/ml_models:/app/ml_models
+      - /opt/geyam/training_data:/app/training_data
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      # Placeholder until Phase 6 step 1 implements /healthz. Hitting /docs proves
+      # uvicorn is up + the app router is loaded.
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/docs", "-o", "/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: geyam-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /opt/geyam/caddy:/opt/geyam/caddy:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:
