@@ -38,8 +38,10 @@ backend/*.pt
 PLAN-*.md
 PLANstage*.md
 PLANstage1portfolio.md
-CLAUDE.md
 .claude/
+
+# CLAUDE.md is tracked from Stage 3 Phase 4 onward as a project overview /
+# onboarding doc for Claude Code sessions and code reviewers.
 
 # Stray scratch
 docs/test_write.txt
