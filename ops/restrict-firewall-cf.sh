@@ -48,18 +48,14 @@ fi
 echo "  v4: $(echo "$v4" | wc -l) CIDRs"
 echo "  v6: $(echo "$v6" | wc -l) CIDRs"
 
-# Delete existing :80 + :443 rules (any source). ufw status numbered shifts
-# numbering after each delete, so we collect rule numbers, then iterate in
-# reverse order.
-echo "Removing existing :80 and :443 rules..."
-mapfile -t to_del < <(
-    ufw status numbered \
-    | awk '/[[:space:]](80|443)\/tcp/ {gsub(/[\[\]]/, "", $1); print $1}' \
-    | sort -rn
-)
-for n in "${to_del[@]}"; do
-    yes | ufw delete "$n" || true
-done
+# Delete the wide-open :80 + :443 rules by signature, not by number.
+# `ufw delete allow 80/tcp` removes the exact wide-open rule (allow from
+# anywhere). Per-CIDR CF rules use a different signature
+# (`allow proto tcp from <cidr> to any port 80`) and are unaffected.
+# Idempotent — silently no-ops if the rule is already gone.
+echo "Removing wide-open :80 and :443 rules..."
+ufw delete allow 80/tcp  >/dev/null 2>&1 || true
+ufw delete allow 443/tcp >/dev/null 2>&1 || true
 
 # Allow :80 + :443 from each CF range. Comment includes the CIDR so the
 # rule is greppable and reversible.
