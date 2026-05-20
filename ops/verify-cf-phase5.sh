@@ -89,15 +89,26 @@ fi
 
 # -- §7 — direct-IP refused --------------------------------------------------
 echo "[§7] Direct origin-IP request from this host"
+# Two valid forms of refusal:
+#   - Connection-level drop (UFW or iptables): curl returns "000"
+#     (curl writes "000" via -w on failure, the `|| echo "000"` fallback
+#     concatenates another "000" when exit code is non-zero, so the
+#     captured value is typically "000" or "000000" — anything composed
+#     entirely of zeros counts as a connection-level refusal).
+#   - L7 rejection (Caddy not-CF matcher): returns HTTP 403.
+# Anything else (200, 5xx, etc.) means the origin is reachable + serving,
+# which violates §7.
 code=$(curl -sS -o /dev/null -w "%{http_code}" \
     --max-time 5 \
     --resolve "${HOST}:443:${ORIGIN_IP}" \
     "https://${HOST}/docs" 2>/dev/null || echo "000")
 echo "      code via --resolve to ${ORIGIN_IP}: ${code}"
-if [[ "$code" == "000" ]]; then
-    ok "direct-IP refused (connection failed) — UFW locked to CF only"
+if [[ -z "${code//0/}" ]]; then
+    ok "direct-IP refused at connection layer (UFW/iptables drop)"
+elif [[ "$code" == "403" ]]; then
+    ok "direct-IP refused at L7 (Caddy not-CF 403)"
 else
-    fail "direct-IP returned HTTP ${code} — UFW still open. Run restrict-firewall-cf.sh."
+    fail "direct-IP returned HTTP ${code} — origin reachable. Check Caddyfile @not_cf + UFW."
 fi
 
 echo
