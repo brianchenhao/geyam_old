@@ -44,10 +44,20 @@ bash ops/setup-cf-waf.sh
 
 Applies, idempotently:
 
-- **§3** `/auth/*` rate limit: 10 req/min/IP, 10-minute block on breach
-- **§4** Custom firewall ruleset: blocks `ip.geoip.is_tor`. To extend with
-  curated ASNs later: `CF_BAD_ASNS="13335 16509" bash ops/setup-cf-waf.sh`
-- **§5** Bot Fight Mode = ON
+- **§3** `/auth/*` rate limit: 2 req per 10s per IP (~12 req/min,
+  closest free-tier approximation of the plan's 10/min target). 10s
+  mitigation_timeout. Upgrade to a Pro plan to use a 60s window + longer
+  block durations.
+- **§4** Custom firewall ruleset blocking `ip.src.country eq "T1"` (CF's
+  pseudo-country code for Tor exit nodes). Curated ASN list opt-in via
+  `CF_BAD_ASNS="13335 16509" bash ops/setup-cf-waf.sh`.
+- **§5** Bot Fight Mode — the script attempts a PUT and gracefully skips
+  on auth error. The `bot_management` endpoint needs a dedicated **Bot
+  Management:Edit** token permission that is *not* included in the
+  Zone WAF:Edit + Zone Settings:Edit scope. Either add that permission
+  and re-run, or flip the toggle manually:
+  → dash.cloudflare.com → geyam.com → **Security → Bots →
+  Bot Fight Mode → ON**
 
 Re-running is safe: existing rulesets are updated in place, not duplicated.
 
