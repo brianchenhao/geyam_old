@@ -85,15 +85,15 @@ trailers. Only allowed footers: `Closes #n`, `Fixes #n`, `Refs #n`, `BREAKING CH
 
 Pushes go to `geyam_old` via direct URL — `git push https://github.com/brianchenhao/geyam_old.git <branch>:<branch>` — not `origin` (legacy mirror).
 
-## Stage 3 status (2026-05-19)
+## Stage 3 status (2026-05-20)
 
 | Phase | What | Status |
 |---|---|---|
 | 1 | VPS provisioning + hardening | Done |
 | 2 | Database migration to VPS | Done (schema at alembic 0016, RLS deferred — Stage 2 has no DB RLS) |
 | 3 | Offsite backup pipeline | Done (R2 + 30-day lifecycle + restore drill) |
-| 4 | App migration (cutover) | Engineering done; cutover scheduled |
-| 5 | Cloudflare edge hardening | Pending |
+| 4 | App migration (cutover) | Done (cutover executed 2026-05-19 ~23:33 KL) |
+| 5 | Cloudflare edge hardening | Done (Tor block + ratelimit via CF API; Caddy L7 @not_cf for §7; UFW CF-only as defense-in-depth; Bot Fight Mode = manual dashboard toggle) |
 | 6 | Monitoring + `/healthz` | Pending |
 | 7 | Antsilk WAF middleware | Antsilk 0.1.0 published to PyPI; integration pending |
 | 8 | Chenki LLM (replacing Ollama) | `/menu/ask` already wired via HF Space; client polish pending |
