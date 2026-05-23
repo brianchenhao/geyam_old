@@ -7,6 +7,15 @@ name: geyam
 # Bring up: docker compose -p geyam -f ops/docker-compose.yml --env-file .env.production up -d
 # Pull only: docker compose -p geyam -f ops/docker-compose.yml pull
 # (ops/deploy.sh wraps these with healthcheck-waiting + log tail.)
+#
+# All services share a json-file logging cap (Phase 6 step 7): max 10 MB per
+# file × 5 files = 50 MB per container, after which docker rotates oldest out.
+# Without this cap, /var/lib/docker/containers grows unbounded over weeks.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
 
 services:
   db:
@@ -19,6 +28,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
+    logging: *default-logging
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
@@ -29,6 +39,7 @@ services:
     image: redis:7-alpine
     container_name: geyam-redis
     restart: unless-stopped
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -60,6 +71,7 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    logging: *default-logging
     healthcheck:
       # Deep readiness probe: DB + Redis + disk. Returns 503 on any failure;
       # docker treats non-2xx as unhealthy and the caddy depends_on gates traffic.
@@ -84,6 +96,7 @@ services:
       backend:
         condition: service_healthy
     restart: unless-stopped
+    logging: *default-logging
 
 volumes:
   pgdata:
