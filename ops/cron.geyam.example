@@ -1,0 +1,25 @@
+# Reference crontab for the Geyam VPS (Phase 6).
+#
+# Install (as root):
+#   crontab -e
+# then paste these lines, leaving the existing PATH / SHELL declarations alone.
+# Verify with: crontab -l
+#
+# All scripts are idempotent; multiple runs are harmless. Each pings its own
+# Healthchecks.io URL (sourced from /etc/default/geyam) so red-on-the-dashboard
+# means that specific job didn't complete.
+
+# Daily DB backup → R2 (Phase 3).
+0 2 * * * /opt/geyam/ops/backup.sh
+
+# Monthly restore drill (Phase 3 step 7 + Phase 6 step 2). First Sunday of the
+# month at 03:00 — picked to follow backup, but well before peak hours.
+0 3 1-7 * 0 /opt/geyam/ops/restore-drill.sh
+
+# Hourly api healthz heartbeat (Phase 6 step 2). Offset 5 min so backup at 02:00
+# isn't tripped over by a probe.
+5 * * * * /opt/geyam/ops/heartbeat-api.sh
+
+# Hourly chenki HF Space wakeup (Phase 6 step 2). Offset 15 min so api + chenki
+# probes are staggered.
+15 * * * * /opt/geyam/ops/heartbeat-chenki.sh
