@@ -2,8 +2,9 @@
 # Automated restore drill: pull latest R2 backup, restore into a sidecar DB,
 # diff row counts vs live, then drop the sidecar. Plan Phase 3 step 7.
 #
-# Phase 6 will cron this weekly and wire Healthchecks.io. Exit non-zero if any
-# table's row count diverges between live and restored — that's a corrupt backup.
+# Plan Phase 6 step 2: pings Healthchecks.io on success/fail when HC_RESTORE_URL
+# is set in /etc/default/geyam. Exits non-zero if any table's row count diverges
+# between live and restored — that's a corrupt backup.
 #
 # Runs as root because rclone config lives in /root/.config/rclone/rclone.conf.
 
@@ -14,10 +15,26 @@ BUCKET=geyam-backups
 TEST_DB=geyam_restore_test
 TMP_DIR=$(mktemp -d)
 
-trap 'rm -rf "$TMP_DIR"; docker exec geyam-db psql -U pos_user -d postgres -c "DROP DATABASE IF EXISTS ${TEST_DB};" >/dev/null 2>&1 || true' EXIT
+[[ -f /etc/default/geyam ]] && source /etc/default/geyam
+: "${HC_RESTORE_URL:=}"
+
+hc_ping() {
+    [[ -z "$HC_RESTORE_URL" ]] && return 0
+    curl -fsS -m 10 --retry 3 -o /dev/null "${HC_RESTORE_URL}${1}" || true
+}
+
+cleanup() {
+    rc=$?
+    rm -rf "$TMP_DIR"
+    docker exec geyam-db psql -U pos_user -d postgres -c "DROP DATABASE IF EXISTS ${TEST_DB};" >/dev/null 2>&1 || true
+    if [[ $rc -ne 0 ]]; then hc_ping "/fail"; fi
+    exit $rc
+}
+trap cleanup EXIT
 
 exec > >(tee -a "$LOG") 2>&1
 
+hc_ping "/start"
 echo "==== $(date -Iseconds) starting restore drill ===="
 
 # Pick the lexicographically last dump (filenames sort by timestamp).
@@ -60,3 +77,4 @@ if [[ "$diverged" -gt 0 ]]; then
 fi
 
 echo "==== $(date -Iseconds) drill PASSED — all row counts match ===="
+hc_ping ""
