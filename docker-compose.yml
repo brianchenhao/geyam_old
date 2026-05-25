@@ -60,15 +60,12 @@ services:
       MODEL_DIR: /app/ml_models
       TRAINING_DATA_DIR: /app/training_data
       UPLOADS_DIR: /app/uploads
-      OLLAMA_HOST: http://host.docker.internal:11434
     volumes:
       - ./backend:/app
       - ./backend/ml_models:/app/ml_models
       - ./backend/training_data:/app/training_data
       - ./backend/uploads:/app/uploads
       - ./backend/backups:/app/backups
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   worker:

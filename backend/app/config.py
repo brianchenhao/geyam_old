@@ -23,7 +23,6 @@ GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 RESEND_FROM = os.getenv("RESEND_FROM", "noreply@geyam.com")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
 # Ensure dirs exist (safe on every boot)
 for _d in (MODEL_DIR, TRAINING_DATA_DIR, UPLOADS_DIR):
