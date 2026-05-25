@@ -95,7 +95,7 @@ Pushes go to `geyam_old` via direct URL — `git push https://github.com/brianch
 | 4 | App migration (cutover) | Done (cutover executed 2026-05-19 ~23:33 KL) |
 | 5 | Cloudflare edge hardening | Done (Tor block + ratelimit via CF API; Caddy L7 @not_cf for §7; UFW CF-only as defense-in-depth; Bot Fight Mode = manual dashboard toggle) |
 | 6 | Monitoring + `/healthz` | Done (Healthchecks.io 4 checks + webhook → alerts.py; UptimeRobot on /healthz; Telegram+Resend dispatch; container log caps + host logrotate) |
-| 7 | Antsilk WAF middleware | Antsilk 0.1.0 published to PyPI; integration pending |
+| 7 | Antsilk WAF middleware | Done engineering 2026-05-25 (sqli/xss/path_traversal/rate_limit verified live; CF-Connecting-IP shim works); 7-day soak ends 2026-06-01 |
 | 8 | Chenki LLM (replacing Ollama) | `/menu/ask` already wired via HF Space; client polish pending |
 | 9 | Stripe billing | Schema migrated (subscriptions, admin_audit_log); routes pending |
 | 10 | Self-serve signup | Schema migrated (onboarding_state); routes pending |
