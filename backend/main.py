@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
+from antsilk import AntsilkMiddleware
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -17,6 +18,11 @@ import asyncio
 
 from app.config import UPLOADS_DIR
 from app.database import init_db
+from app.middleware.antsilk_setup import (
+    RealClientIPMiddleware,
+    antsilk_enabled,
+    build_antsilk_config,
+)
 from app.services.ws_broker import run_subscriber
 from app.websocket import hub
 
@@ -54,8 +60,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Antsilk WAF + the CF-Connecting-IP shim. Starlette's add_middleware
+# prepends to user_middleware and the stack is built reversed, so the LAST
+# add_middleware call ends up OUTERMOST at request time. Calling
+# RealClientIPMiddleware last means it rewrites scope["client"] before
+# AntsilkMiddleware inspects it. ANTSILK_ENABLED=false flips the kill
+# switch for emergency rollback without redeploying.
+if antsilk_enabled():
+    app.add_middleware(AntsilkMiddleware, config=build_antsilk_config())
+    app.add_middleware(RealClientIPMiddleware)
+
 from app.routers import admin as admin_router  # noqa: E402
 from app.routers import alerts as alerts_router  # noqa: E402
+from app.routers import antsilk_admin as antsilk_admin_router  # noqa: E402
 from app.routers import auth as auth_router  # noqa: E402
 from app.routers import detect as detect_router  # noqa: E402
 from app.routers import health as health_router  # noqa: E402
@@ -86,6 +103,7 @@ app.include_router(audit_router.router)
 app.include_router(ws_router.router)
 app.include_router(health_router.router)
 app.include_router(alerts_router.router)
+app.include_router(antsilk_admin_router.router)
 
 
 @app.get("/health")
