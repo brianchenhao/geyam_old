@@ -85,7 +85,7 @@ trailers. Only allowed footers: `Closes #n`, `Fixes #n`, `Refs #n`, `BREAKING CH
 
 Pushes go to `geyam_old` via direct URL — `git push https://github.com/brianchenhao/geyam_old.git <branch>:<branch>` — not `origin` (legacy mirror).
 
-## Stage 3 status (2026-05-20)
+## Stage 3 status (2026-05-25)
 
 | Phase | What | Status |
 |---|---|---|
@@ -94,7 +94,7 @@ Pushes go to `geyam_old` via direct URL — `git push https://github.com/brianch
 | 3 | Offsite backup pipeline | Done (R2 + 30-day lifecycle + restore drill) |
 | 4 | App migration (cutover) | Done (cutover executed 2026-05-19 ~23:33 KL) |
 | 5 | Cloudflare edge hardening | Done (Tor block + ratelimit via CF API; Caddy L7 @not_cf for §7; UFW CF-only as defense-in-depth; Bot Fight Mode = manual dashboard toggle) |
-| 6 | Monitoring + `/healthz` | Pending |
+| 6 | Monitoring + `/healthz` | Done (Healthchecks.io 4 checks + webhook → alerts.py; UptimeRobot on /healthz; Telegram+Resend dispatch; container log caps + host logrotate) |
 | 7 | Antsilk WAF middleware | Antsilk 0.1.0 published to PyPI; integration pending |
 | 8 | Chenki LLM (replacing Ollama) | `/menu/ask` already wired via HF Space; client polish pending |
 | 9 | Stripe billing | Schema migrated (subscriptions, admin_audit_log); routes pending |
