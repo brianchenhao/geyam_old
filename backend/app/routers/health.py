@@ -70,7 +70,7 @@ def _check_disk() -> dict[str, Any]:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
-@router.get("/healthz")
+@router.api_route("/healthz", methods=["GET", "HEAD"])
 async def healthz(response: Response) -> dict[str, Any]:
     db_result, redis_result = await asyncio.gather(_check_db(), _check_redis())
     disk_result = _check_disk()
