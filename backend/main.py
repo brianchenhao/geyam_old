@@ -23,6 +23,7 @@ from app.middleware.antsilk_setup import (
     antsilk_enabled,
     build_antsilk_config,
 )
+from app.services.chenki_menu_ask import warmup as chenki_warmup
 from app.services.ws_broker import run_subscriber
 from app.websocket import hub
 
@@ -31,6 +32,10 @@ from app.websocket import hub
 async def lifespan(app: FastAPI):
     await init_db()
     broker_task = asyncio.create_task(run_subscriber(hub))
+    # Fire chenki warmup as a detached task. HF Space cold-start is ~60s; we
+    # must not block FastAPI boot on it. If the warmup fails, /menu/ask still
+    # works once the Space wakes on the next real request.
+    asyncio.create_task(chenki_warmup())
     try:
         yield
     finally:
