@@ -49,7 +49,7 @@ class _AskChatBubbleState extends State<AskChatBubble> {
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _msgs.add(_ChatMsg(
-            "Couldn't reach the LLM (${e.statusCode}). Is the backend + Ollama running?",
+            "Couldn't reach the LLM (${e.statusCode}). Is the backend running and the LLM endpoint reachable?",
             fromUser: false,
             isError: true,
           )));
