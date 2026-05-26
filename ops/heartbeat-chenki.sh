@@ -13,7 +13,7 @@ set -euo pipefail
 
 [[ -f /etc/default/geyam ]] && source /etc/default/geyam
 : "${HC_CHENKI_URL:=}"
-: "${CHENKI_BASE:=https://chenki-llm.hf.space}"
+: "${CHENKI_BASE:=https://brianchenhao-chenki-llm.hf.space}"
 
 if [[ -z "$HC_CHENKI_URL" ]]; then
     echo "HC_CHENKI_URL not set; skipping ping" >&2
