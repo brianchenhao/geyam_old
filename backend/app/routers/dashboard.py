@@ -16,7 +16,7 @@ from app.models.transaction import Transaction, TransactionItem
 from app.models.user import User
 from app.services.forecast import (daily_series_from_rows, eoq, ewma,
                                      reorder_point, safety_stock, z_score_anomaly)
-from app.services.ollama_chat import chat_with_tools
+from app.services.chenki_assistant import ask_owner
 
 router = APIRouter(tags=["dashboard"])
 
@@ -441,15 +441,12 @@ class AskIn(BaseModel):
 @router.post("/ask", dependencies=[Depends(require_role("owner"))])
 async def ask_endpoint(body: AskIn, tenant_id: int = Depends(get_tenant),
                         session: AsyncSession = Depends(get_session)) -> dict:
-    """Tool-calling POS assistant (Qwen3.5 via Ollama).
+    """Owner-side POS analytics assistant, backed by Chenki.
 
-    The LLM picks among 7 analytics tools (product sales, day-by-day revenue,
-    staff, low stock, forecast/reorder, detection mix, old transactions) and
-    paraphrases the result. Tenant scoping is enforced by the SQLAlchemy
-    event hook via get_tenant.
+    A keyword classifier maps the question to one of 8 analytics tools
+    (product sales, day-by-day revenue, staff, low stock, forecast/reorder,
+    detection mix, recent transactions, old transactions); the picked tool
+    runs against the tenant-scoped DB and Chenki paraphrases the JSON.
+    Tenant scoping comes from the SQLAlchemy event hook via get_tenant.
     """
-    result = await chat_with_tools(body.question, session)
-    return {
-        "answer": result["answer"],
-        "tools_used": [t["name"] for t in result.get("tool_calls", [])],
-    }
+    return await ask_owner(body.question, session)

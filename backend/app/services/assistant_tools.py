@@ -328,7 +328,11 @@ async def old_transactions(session: AsyncSession, older_than_days: int = 7) -> d
     }
 
 
-# ---------- tool registry + JSON schemas (Ollama tool format) ----------
+# ---------- tool registry + JSON schemas ----------
+# Schemas kept as reference documentation. chenki_assistant uses a keyword
+# classifier rather than LLM tool-calling, so TOOL_SCHEMAS is no longer
+# wired into a runtime path — but the descriptions remain the canonical
+# spec for what each tool answers.
 
 ToolFn = Callable[..., Awaitable[dict]]
 
