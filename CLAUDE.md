@@ -96,7 +96,7 @@ Pushes go to `geyam_old` via direct URL — `git push https://github.com/brianch
 | 5 | Cloudflare edge hardening | Done (Tor block + ratelimit via CF API; Caddy L7 @not_cf for §7; UFW CF-only as defense-in-depth; Bot Fight Mode = manual dashboard toggle) |
 | 6 | Monitoring + `/healthz` | Done (Healthchecks.io 4 checks + webhook → alerts.py; UptimeRobot on /healthz; Telegram+Resend dispatch; container log caps + host logrotate) |
 | 7 | Antsilk WAF middleware | Done engineering 2026-05-25 (sqli/xss/path_traversal/rate_limit verified live; CF-Connecting-IP shim works); 7-day soak ends 2026-06-01 |
-| 8 | Chenki LLM (replacing Ollama) | Done (chenki>=0.1.0 from PyPI; ChenkiClient singleton in services/chenki_menu_ask.py; warmup fired from FastAPI lifespan; /menu/ask returns tenant-scoped chenki replies; ollama removed from compose env + Dockerfile). Owner-assistant /ask still on Ollama — separate feature, out of Phase 8 scope. |
+| 8 | Chenki LLM (replacing Ollama) | Done. Cashier `/menu/ask` via ChenkiClient singleton + warmup in lifespan. Owner `/ask` migrated 2026-05-27: keyword classifier picks 1 of 8 analytics tools, chenki summarises the JSON; `services/ollama_chat.py` deleted, ollama removed from compose + config. |
 | 9 | Stripe billing | Schema migrated (subscriptions, admin_audit_log); routes pending |
 | 10 | Self-serve signup | Schema migrated (onboarding_state); routes pending |
 | 11 | Pricing/landing page | Pending |

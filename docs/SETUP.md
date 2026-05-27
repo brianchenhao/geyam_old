@@ -8,7 +8,7 @@ This is the operational runbook for starting GEYAM from scratch on your laptop, 
 
 1. **Docker Desktop** running (verify with `docker ps`).
 2. **Flutter SDK** on PATH (`flutter --version`).
-3. **Ollama** (optional, Stage 2 owner `/ask` only) running locally with `phi3:mini` pulled (`ollama list`). Not required for the cashier menu Q&A (`/menu/ask`), which uses Chenki against a Hugging Face Space.
+3. ~~Ollama~~ — no longer required. Both `/menu/ask` and `/ask` now use Chenki against `chenki-llm` on a Hugging Face Space. No local LLM dependency.
 4. **Cloudflare Tunnel** `cloudflared` installed and already authenticated to the `geyam.com` zone.
 5. **`backend/.env`** populated (see `.env.example` for the full key list):
    - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`

@@ -92,11 +92,13 @@ RQ was chosen over Celery because the project has three job types (training, rec
 
 YOLOv8n is small (≈6M parameters), trains in minutes on CPU for a shop's ~20-item catalogue, and Ultralytics ships a CLI and Python API good enough that `run_batch` is under 200 lines. MediaPipe EfficientDet-Lite0 is used as a category-level shortlister — if the YOLO head is uncertain, the MediaPipe label narrows the candidate set without a full re-train. OpenAI gpt-4o-mini is the last-resort vision fallback: strictly quota-capped (default 50 calls/tenant/day), with a perceptual-hash Redis cache (7-day TTL) to prevent the same photo costing money twice.
 
-### 3.7 LLM — Chenki (self-hosted Qwen 2.5 1.5B on HF Space) for `/menu/ask`; Ollama `phi3:mini` for owner `/ask` (Stage 2)
+### 3.7 LLM — Chenki (self-hosted Qwen 2.5 1.5B on HF Space) for both `/menu/ask` and owner `/ask`
 
-**Stage 3 (current):** Cashier-facing menu Q&A (`POST /menu/ask`) goes through Chenki, a self-hostable LLM client (`pip install chenki`) targeting a private Hugging Face Space running Qwen 2.5 1.5B. The backend constructs a tenant-scoped menu prompt via `chenki.RestaurantPrompts.menu_qa(...)` and calls `ChenkiClient.achat(...)`. A startup warmup task wakes the Space at deploy time so the first real request doesn't eat a 30–60s cold-start. The HF Space is kept warm by an hourly `heartbeat-chenki.sh` cron pinging `/health`.
+Both LLM endpoints go through Chenki (`pip install chenki`), a self-hostable client targeting a private Hugging Face Space running Qwen 2.5 1.5B. The backend uses one `ChenkiClient` per service module and a FastAPI lifespan warmup task wakes the Space at deploy time so the first real request doesn't eat a 30–60s cold-start. The HF Space is kept warm by an hourly `heartbeat-chenki.sh` cron pinging `/health`.
 
-**Stage 2 (still live for owner dashboard):** Owner-side "Ask GEYAM" (`POST /ask`) still runs against a host-side Ollama `phi3:mini` with tool-calling, because Chenki v0.1.0 does not yet expose OpenAI-style `tools=` function calling. This endpoint is functional during laptop dev but inert on the VPS (no Ollama in the production stack) — migration or retirement is tracked as future work.
+**Cashier menu Q&A — `POST /menu/ask`:** loads only the active tenant menu, calls `chenki.RestaurantPrompts.menu_qa(...)` + `ChenkiClient.achat(...)`. Strict tenant isolation by construction.
+
+**Owner analytics Q&A — `POST /ask`:** Chenki v0.1.0 does not expose OpenAI-style `tools=` function calling, so a deterministic keyword classifier in `services/chenki_assistant.py` maps the question to one of 8 analytics tools (product sales, day-by-day revenue, staff performance, low stock, forecast/reorder, detection source mix, recent/old transactions). The picked tool runs against the tenant-scoped DB and Chenki paraphrases the JSON in plain English. One LLM call per question (vs. the prior multi-round Ollama loop) — faster and deterministic.
 
 ### 3.8 Authentication — Google OAuth (owner) + bcrypt PIN (cashier), JWT HS256
 
