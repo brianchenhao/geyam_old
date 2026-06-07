@@ -97,7 +97,7 @@ Pushes go to `geyam_old` via direct URL — `git push https://github.com/brianch
 | 6 | Monitoring + `/healthz` | Done (Healthchecks.io 4 checks + webhook → alerts.py; UptimeRobot on /healthz; Telegram+Resend dispatch; container log caps + host logrotate) |
 | 7 | Antsilk WAF middleware | Done engineering 2026-05-25 (sqli/xss/path_traversal/rate_limit verified live; CF-Connecting-IP shim works); 7-day soak ends 2026-06-01 |
 | 8 | Chenki LLM (replacing Ollama) | Done. Cashier `/menu/ask` via ChenkiClient singleton + warmup in lifespan. Owner `/ask` migrated 2026-05-27: keyword classifier picks 1 of 8 analytics tools, chenki summarises the JSON; `services/ollama_chat.py` deleted, ollama removed from compose + config. |
-| 9 | Stripe billing | Schema migrated (subscriptions, admin_audit_log); routes pending |
+| 9 | Stripe billing | Routes + audit decorator + plan enforcement + Flutter banner implemented 2026-06-04. Pending: Stripe Dashboard setup (products + webhook), env vars, live-mode cutover. Runbook at `ops/PHASE9.md`. |
 | 10 | Self-serve signup | Schema migrated (onboarding_state); routes pending |
 | 11 | Pricing/landing page | Pending |
 | 12 | Customer records | Optional, deferred |

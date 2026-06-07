@@ -3,6 +3,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 
 import '../config/theme.dart';
+import '../providers/billing_provider.dart';
 import '../providers/notification_provider.dart';
 import '../services/api_service.dart';
 import 'dashboard_screen.dart';
@@ -74,6 +75,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       );
       if (!mounted) return;
       context.read<NotificationProvider>().connect(r['access_token'] as String);
+      // ignore: discarded_futures
+      context.read<BillingProvider>().refresh();
       final next = r['role'] == 'admin' ? const TenantPickerScreen() : const DashboardScreen();
       Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => next));
     } on ApiException catch (e) {
