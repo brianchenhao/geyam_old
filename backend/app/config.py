@@ -18,6 +18,10 @@ JWT_SECRET = os.getenv("JWT_SECRET", "change-me")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 FERNET_KEY = os.getenv("FERNET_KEY", "")
 ADMIN_EMAILS = [e.strip() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()]
+# Phase 10: admins can only impersonate this single demo tenant. Paying tenants
+# are off-limits to mitigate "support session" being a back door into customer
+# data. Override per env for local dev; defaults to the seed shop.
+DEMO_TENANT_HANDLE = os.getenv("DEMO_TENANT_HANDLE", "brianmart")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")

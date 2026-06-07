@@ -83,6 +83,7 @@ from app.routers import auth as auth_router  # noqa: E402
 from app.routers import detect as detect_router  # noqa: E402
 from app.routers import health as health_router  # noqa: E402
 from app.routers import menu as menu_router  # noqa: E402
+from app.routers import onboarding as onboarding_router  # noqa: E402
 from app.routers import audit as audit_router  # noqa: E402
 from app.routers import dashboard as dashboard_router  # noqa: E402
 from app.routers import inventory as inventory_router  # noqa: E402
@@ -109,6 +110,7 @@ app.include_router(inventory_router.router)
 app.include_router(dashboard_router.router)
 app.include_router(audit_router.router)
 app.include_router(subscriptions_router.router)
+app.include_router(onboarding_router.router)
 app.include_router(ws_router.router)
 app.include_router(health_router.router)
 app.include_router(alerts_router.router)

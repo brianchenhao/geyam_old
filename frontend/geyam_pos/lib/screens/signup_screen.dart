@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
-import 'dashboard_screen.dart';
+import 'onboarding_wizard_screen.dart';
 
 class SignupScreen extends StatefulWidget {
   final String signupToken;
@@ -40,7 +40,7 @@ class _SignupScreenState extends State<SignupScreen> {
       );
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const DashboardScreen()),
+        MaterialPageRoute(builder: (_) => const OnboardingWizardScreen()),
       );
     } on ApiException catch (e) {
       setState(() => _error = e.message);

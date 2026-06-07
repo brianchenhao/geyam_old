@@ -4,6 +4,7 @@ from app.models.admin_audit_log import AdminAuditLog
 from app.models.audit_log import AuditLog
 from app.models.menu_item import MenuItem
 from app.models.model_version import ModelVersion
+from app.models.onboarding_state import OnboardingState
 from app.models.openai_usage import OpenAIUsage
 from app.models.payment import Payment
 from app.models.processed_stripe_event import ProcessedStripeEvent
@@ -20,4 +21,5 @@ __all__ = ["Tenant", "User", "AuditLog", "TenantSettings", "MenuItem",
            "TrainingJob", "ModelVersion", "OpenAIUsage",
            "Transaction", "TransactionItem", "Payment", "Receipt",
            "StockMovement",
-           "Subscription", "AdminAuditLog", "ProcessedStripeEvent"]
+           "Subscription", "AdminAuditLog", "ProcessedStripeEvent",
+           "OnboardingState"]

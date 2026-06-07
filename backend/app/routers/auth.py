@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import ADMIN_EMAILS, JWT_ALGORITHM, JWT_SECRET
 from app.deps import bypass_tenant_scope, get_current_user, get_session
+from app.models.onboarding_state import OnboardingState
+from app.models.subscription import Subscription
 from app.models.tenant import Tenant
 from app.models.user import User
 from app.security import (
@@ -160,6 +162,11 @@ async def google_signup(body: GoogleSignupIn, session: AsyncSession = Depends(ge
             google_sub=sub, role="owner", is_active=True,
         )
         session.add(user)
+        # Phase 10: every new tenant lands on the Free plan, with the onboarding
+        # wizard at step 1. Subscription rows are mandatory now that Phase 9
+        # plan-enforcement code reads `subscriptions.plan` on every quota check.
+        session.add(Subscription(tenant_id=tenant.id, plan="free", status="active"))
+        session.add(OnboardingState(tenant_id=tenant.id, step=1))
         await session.flush()
         await audit(session, action="tenant.create", tenant_id=tenant.id, user_id=user.id,
                     meta={"via": "self_signup", "email": email, "handle": handle})
