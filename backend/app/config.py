@@ -24,6 +24,26 @@ RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 RESEND_FROM = os.getenv("RESEND_FROM", "noreply@geyam.com")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
+# Stage 3 Phase 9 — Stripe billing.
+# Test-mode keys begin with sk_test_ / pk_test_ / whsec_; live-mode swap is the
+# Phase 9 step 11 cutover (one env var change + restart, no code change).
+STRIPE_API_KEY = os.getenv("STRIPE_API_KEY", "")
+STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PRICE_PRO = os.getenv("STRIPE_PRICE_PRO", "")
+STRIPE_PRICE_BUSINESS = os.getenv("STRIPE_PRICE_BUSINESS", "")
+# Where Stripe sends the user back after Checkout / Portal sessions.
+# Defaults are dev-friendly; ops override to https://app.geyam.com/... in prod.
+STRIPE_CHECKOUT_SUCCESS_URL = os.getenv(
+    "STRIPE_CHECKOUT_SUCCESS_URL", "http://localhost:8080/billing/success",
+)
+STRIPE_CHECKOUT_CANCEL_URL = os.getenv(
+    "STRIPE_CHECKOUT_CANCEL_URL", "http://localhost:8080/billing/cancel",
+)
+STRIPE_PORTAL_RETURN_URL = os.getenv(
+    "STRIPE_PORTAL_RETURN_URL", "http://localhost:8080/billing",
+)
+
 # Ensure dirs exist (safe on every boot)
 for _d in (MODEL_DIR, TRAINING_DATA_DIR, UPLOADS_DIR):
     _d.mkdir(parents=True, exist_ok=True)

@@ -9,10 +9,13 @@ from typing import Optional
 from PIL import Image
 from rapidfuzz import fuzz
 from redis import Redis
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.openai_usage import OpenAIUsage
+from app.models.tenant import Tenant
 from app.models.tenant_settings import TenantSettings
+from app.services.plan_enforcement import PLAN_LIMITS, UNLIMITED
 
 
 PROMPT = (
@@ -85,7 +88,7 @@ def run_openai(
         except Exception:
             pass
 
-    # Quota check
+    # Quota check — per-day TenantSettings cap AND per-month plan cap both apply.
     today = date.today()
     usage = sync_session.query(OpenAIUsage).filter(
         OpenAIUsage.tenant_id == tenant_id, OpenAIUsage.day == today
@@ -94,6 +97,20 @@ def run_openai(
     limit = settings.openai_daily_limit or 50
     if calls >= limit:
         return [], "quota_exceeded"
+
+    # Phase 9: plan-tier monthly cap. tenants.plan is mirrored from the Stripe
+    # webhook; defaults to 'free' for tenants with no subscription row.
+    tenant = sync_session.query(Tenant).filter(Tenant.id == tenant_id).first()
+    plan_name = tenant.plan if tenant else "free"
+    monthly_cap = PLAN_LIMITS.get(plan_name, PLAN_LIMITS["free"]).openai_monthly
+    if monthly_cap != UNLIMITED:
+        month_start = today.replace(day=1)
+        monthly_used = sync_session.execute(
+            select(func.coalesce(func.sum(OpenAIUsage.calls), 0))
+            .where(OpenAIUsage.tenant_id == tenant_id, OpenAIUsage.day >= month_start)
+        ).scalar() or 0
+        if int(monthly_used) >= monthly_cap:
+            return [], "plan_quota_exceeded"
 
     # Call OpenAI
     try:

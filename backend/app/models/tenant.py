@@ -14,6 +14,8 @@ class Tenant(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     owner_email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    plan: Mapped[str] = mapped_column(String(20), nullable=False, server_default="free")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     # Marker attribute so the tenant-scope hook knows NOT to filter this table

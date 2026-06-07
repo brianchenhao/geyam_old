@@ -15,6 +15,7 @@ from app.deps import get_current_user, get_session, get_tenant, require_role
 from app.models.menu_item import MenuItem
 from app.services.audit import audit
 from app.services.chenki_menu_ask import ask_menu
+from app.services.plan_enforcement import ensure_active, ensure_item_quota, load_tenant
 
 router = APIRouter(prefix="/menu", tags=["menu"])
 
@@ -114,6 +115,10 @@ async def create_item(body: MenuItemCreateIn,
                       user_claims: dict = Depends(get_current_user),
                       tenant_id: int = Depends(get_tenant),
                       session: AsyncSession = Depends(get_session)) -> MenuItemOut:
+    tenant = await load_tenant(session, tenant_id)
+    ensure_active(tenant)
+    await ensure_item_quota(session, tenant)
+
     label = _make_label(body.name)
     clash = (await session.execute(
         select(MenuItem).where((MenuItem.name == body.name) | (MenuItem.label == label))

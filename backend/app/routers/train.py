@@ -77,6 +77,11 @@ async def upload_training_video(
     tenant_id: int = Depends(get_tenant),
     session: AsyncSession = Depends(get_session),
 ) -> TrainingJobOut:
+    from app.services.plan_enforcement import ensure_active, ensure_training_quota, load_tenant
+    tenant = await load_tenant(session, tenant_id)
+    ensure_active(tenant)
+    await ensure_training_quota(session, tenant)
+
     if file.content_type not in ALLOWED_VIDEO_TYPES:
         raise HTTPException(status_code=400, detail=f"content_type must be in {sorted(ALLOWED_VIDEO_TYPES)}")
 

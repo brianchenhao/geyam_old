@@ -17,10 +17,11 @@ WORKDIR /app
 # the multi-GB CUDA wheels. The VPS has no GPU and the laptop runs inference on
 # CPU anyway. Cuts the final image from ~12 GB to ~3 GB.
 RUN pip install --index-url https://download.pytorch.org/whl/cpu \
+    --timeout 600 --retries 5 \
     torch torchvision
 
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install --timeout 600 --retries 5 -r requirements.txt
 
 COPY . .
 

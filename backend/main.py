@@ -76,6 +76,7 @@ if antsilk_enabled():
     app.add_middleware(RealClientIPMiddleware)
 
 from app.routers import admin as admin_router  # noqa: E402
+from app.routers import admin_audit as admin_audit_router  # noqa: E402
 from app.routers import alerts as alerts_router  # noqa: E402
 from app.routers import antsilk_admin as antsilk_admin_router  # noqa: E402
 from app.routers import auth as auth_router  # noqa: E402
@@ -88,11 +89,13 @@ from app.routers import inventory as inventory_router  # noqa: E402
 from app.routers import payment as payment_router  # noqa: E402
 from app.routers import receipt as receipt_router  # noqa: E402
 from app.routers import settings as settings_router  # noqa: E402
+from app.routers import subscriptions as subscriptions_router  # noqa: E402
 from app.routers import train as train_router  # noqa: E402
 from app.routers import transaction as transaction_router  # noqa: E402
 from app.routers import users as users_router  # noqa: E402
 from app.routers import ws as ws_router  # noqa: E402
 app.include_router(admin_router.router)
+app.include_router(admin_audit_router.router)
 app.include_router(auth_router.router)
 app.include_router(users_router.router)
 app.include_router(settings_router.router)
@@ -105,6 +108,7 @@ app.include_router(receipt_router.router)
 app.include_router(inventory_router.router)
 app.include_router(dashboard_router.router)
 app.include_router(audit_router.router)
+app.include_router(subscriptions_router.router)
 app.include_router(ws_router.router)
 app.include_router(health_router.router)
 app.include_router(alerts_router.router)
@@ -113,4 +117,4 @@ app.include_router(antsilk_admin_router.router)
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "phase": "13", "stage": 2}
+    return {"status": "ok", "phase": "13", "stage": 3}

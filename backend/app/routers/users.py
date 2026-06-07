@@ -18,6 +18,7 @@ from app.models.tenant import Tenant
 from app.models.user import User
 from app.security import hash_pin
 from app.services.audit import audit
+from app.services.plan_enforcement import ensure_active, ensure_cashier_quota
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -76,6 +77,9 @@ async def create_cashier(body: CashierCreateIn,
         tenant = (await session.execute(select(Tenant).where(Tenant.id == tenant_id))).scalars().first()
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant missing")
+
+    ensure_active(tenant)
+    await ensure_cashier_quota(session, tenant)
 
     submitted = (body.username or "").strip().lower()
     if submitted:

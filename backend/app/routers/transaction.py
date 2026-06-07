@@ -23,6 +23,7 @@ from app.models.tenant import Tenant
 from app.models.tenant_settings import TenantSettings
 from app.models.transaction import Transaction, TransactionItem
 from app.services.audit import audit
+from app.services.plan_enforcement import ensure_active, load_tenant
 from app.services.billplz import create_bill, fetch_bill
 from app.services.crypto import decrypt_secret
 from app.services.tx_numbering import next_tx_number
@@ -91,6 +92,9 @@ async def create_transaction(
     tenant_id: int = Depends(get_tenant),
     session: AsyncSession = Depends(get_session),
 ) -> TransactionOut:
+    tenant = await load_tenant(session, tenant_id)
+    ensure_active(tenant)
+
     item_ids = [li.menu_item_id for li in body.items]
     menu_rows = (await session.execute(
         select(MenuItem).where(MenuItem.id.in_(item_ids))

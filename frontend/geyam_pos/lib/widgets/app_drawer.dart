@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../config/theme.dart';
 import '../screens/audit_log_screen.dart';
+import '../screens/billing_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/inventory_screen.dart';
 import '../screens/login_screen.dart';
@@ -61,6 +62,7 @@ class AppDrawer extends StatelessWidget {
           if (isOwner) _item(context, Icons.badge, 'Staff', const StaffManagerScreen()),
           if (isOwner) _item(context, Icons.history, 'Audit log', const AuditLogScreen()),
           if (isOwner) const Divider(),
+          if (isOwner) _item(context, Icons.credit_card, 'Billing', const BillingScreen()),
           if (isOwner) _item(context, Icons.settings, 'Settings', const SettingsScreen()),
           const Divider(),
           ListTile(
