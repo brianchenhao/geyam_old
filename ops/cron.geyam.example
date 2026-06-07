@@ -26,4 +26,4 @@
 
 # Daily past-due → suspended sweeper (Phase 9 step 9). Runs at 04:00; flips
 # subscriptions whose past_due_since exceeds the 7-day grace period.
-0 4 * * * docker exec geyam-backend-1 python -m scripts.sweep_past_due
+0 4 * * * docker exec geyam-backend python -m scripts.sweep_past_due
