@@ -48,3 +48,5 @@ docs/test_write.txt
 
 # Node (not used by geyam build)
 node_modules/
+
+ops/unstuck.ps1
