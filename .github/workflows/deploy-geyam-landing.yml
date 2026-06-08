@@ -1,0 +1,68 @@
+name: Build + deploy Flutter web to geyam.com (Hostinger)
+
+# Phase 11 step 4. Triggered on any push that touches the Flutter app or this
+# workflow. Builds Flutter Web with the prod API URL baked in, then SFTPs
+# build/web/ into Hostinger's public_html/ for the geyam.com slot.
+#
+# Required GitHub Secrets:
+#   HOSTINGER_GEYAM_SFTP_HOST  — e.g. "ftp.geyam.com" or the IP Hostinger gave you
+#   HOSTINGER_GEYAM_SFTP_USER  — Hostinger SFTP username
+#   HOSTINGER_GEYAM_SFTP_PASS  — Hostinger SFTP password
+#   HOSTINGER_GEYAM_SFTP_PORT  — optional, defaults to 22
+#
+# Hostinger needs an SPA fallback (404 → /index.html) configured separately in
+# the panel (htaccess or "Manage SPA" toggle), otherwise refreshing /pricing or
+# /signup will 404 instead of being handled client-side.
+
+on:
+  push:
+    branches:
+      - main
+      - 'stage-3-phase-*'
+    paths:
+      - 'frontend/geyam_pos/**'
+      - '.github/workflows/deploy-geyam-landing.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/geyam_pos
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.24.x'
+
+      - name: flutter pub get
+        run: flutter pub get
+
+      - name: flutter build web
+        # --base-href / matches the geyam.com root deploy. API URL is baked
+        # in at build time via dart-define so the bundle can hit api.geyam.com
+        # without any runtime config file.
+        run: flutter build web --release --base-href / --dart-define=API_BASE_URL=https://api.geyam.com
+
+      - name: SFTP build/web/ → Hostinger public_html/
+        uses: pressidium/lftp-mirror-action@v1
+        with:
+          host: ${{ secrets.HOSTINGER_GEYAM_SFTP_HOST }}
+          port: ${{ secrets.HOSTINGER_GEYAM_SFTP_PORT || 22 }}
+          user: ${{ secrets.HOSTINGER_GEYAM_SFTP_USER }}
+          pass: ${{ secrets.HOSTINGER_GEYAM_SFTP_PASS }}
+          # lftp mirror flags: -R upload, --delete prunes stale files, --verbose
+          # for visible progress in the action log. Local must end with /.
+          onlyNewer: true
+          settings: 'sftp:auto-confirm=yes'
+          localDir: 'frontend/geyam_pos/build/web/'
+          remoteDir: 'public_html/'
+          options: '--reverse --delete --verbose'

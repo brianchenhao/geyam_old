@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../config/theme.dart';
+import '../widgets/antsilk_counter.dart';
 import '../widgets/sakura_overlay.dart';
 import 'info_screen.dart';
 import 'login_screen.dart';
@@ -98,9 +99,20 @@ class _LandingScreenState extends State<LandingScreen> {
                         const SizedBox(height: 32),
                         _featureGrid(),
                         const SizedBox(height: 48),
+                        const Center(child: AntsilkCounterWidget()),
+                        const SizedBox(height: 16),
                         Center(
-                          child: Text('© GEYAM 2026 · v2.0',
-                            style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12),
+                          child: Column(
+                            children: [
+                              Text('Powered by Chenki + Antsilk',
+                                style: TextStyle(color: Colors.white.withValues(alpha: 0.5),
+                                    fontSize: 13, letterSpacing: 0.5),
+                              ),
+                              const SizedBox(height: 6),
+                              Text('© GEYAM 2026 · v2.0',
+                                style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12),
+                              ),
+                            ],
                           ),
                         ),
                       ],

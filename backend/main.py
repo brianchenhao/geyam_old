@@ -79,6 +79,7 @@ from app.routers import admin as admin_router  # noqa: E402
 from app.routers import admin_audit as admin_audit_router  # noqa: E402
 from app.routers import alerts as alerts_router  # noqa: E402
 from app.routers import antsilk_admin as antsilk_admin_router  # noqa: E402
+from app.routers import antsilk_public as antsilk_public_router  # noqa: E402
 from app.routers import auth as auth_router  # noqa: E402
 from app.routers import detect as detect_router  # noqa: E402
 from app.routers import health as health_router  # noqa: E402
@@ -115,6 +116,7 @@ app.include_router(ws_router.router)
 app.include_router(health_router.router)
 app.include_router(alerts_router.router)
 app.include_router(antsilk_admin_router.router)
+app.include_router(antsilk_public_router.router)
 
 
 @app.get("/health")

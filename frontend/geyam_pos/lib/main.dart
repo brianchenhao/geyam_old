@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:provider/provider.dart';
 
 import 'config/theme.dart';
@@ -9,8 +10,8 @@ import 'providers/billing_provider.dart';
 import 'providers/connectivity_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/theme_provider.dart';
+import 'router.dart';
 import 'screens/dashboard_screen.dart';
-import 'screens/landing_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/pos_screen.dart';
 import 'screens/tenant_picker_screen.dart';
@@ -26,6 +27,11 @@ void main() {
 
   runZonedGuarded<Future<void>>(() async {
     WidgetsFlutterBinding.ensureInitialized();
+    // Flutter web defaults to hash-based URLs (/#/pricing). Phase 11's deep
+    // links work better with clean paths so SEO crawlers and direct links
+    // resolve to /pricing not /#/pricing — and the Hostinger .htaccess SPA
+    // fallback handles refresh. No-op on mobile.
+    if (kIsWeb) usePathUrlStrategy();
     await ApiService.loadAuth();
 
     final connectivity = ConnectivityProvider();
@@ -57,12 +63,21 @@ void main() {
   });
 }
 
-class GeyamApp extends StatelessWidget {
+class GeyamApp extends StatefulWidget {
   const GeyamApp({super.key});
+
+  @override
+  State<GeyamApp> createState() => _GeyamAppState();
+}
+
+class _GeyamAppState extends State<GeyamApp> {
+  // Router instance is created once and held — GoRouter rebuilds otherwise
+  // discard route history on every theme/auth-state change.
+  final _router = kIsWeb ? buildRouter() : null;
 
   Widget _initialScreen() {
     if (ApiService.token == null) {
-      return kIsWeb ? const LandingScreen() : const LoginScreen();
+      return const LoginScreen();
     }
     switch (ApiService.role) {
       case 'cashier':
@@ -74,17 +89,7 @@ class GeyamApp extends StatelessWidget {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final themeProvider = context.watch<ThemeProvider>();
-    return MaterialApp(
-      title: 'GEYAM POS',
-      debugShowCheckedModeBanner: false,
-      theme: GeyamTheme.light,
-      darkTheme: GeyamTheme.dark,
-      themeMode: themeProvider.mode,
-      home: _initialScreen(),
-      builder: (context, child) {
+  TransitionBuilder _materialBuilder() => (context, child) {
         if (child == null) return const SizedBox.shrink();
         // Suspended-tenant banner sits above everything so owners see it on
         // every screen until they update payment. Cashiers and admins never
@@ -102,7 +107,30 @@ class GeyamApp extends StatelessWidget {
           );
         }
         return wrapped;
-      },
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final themeProvider = context.watch<ThemeProvider>();
+    if (_router != null) {
+      return MaterialApp.router(
+        title: 'GEYAM POS',
+        debugShowCheckedModeBanner: false,
+        theme: GeyamTheme.light,
+        darkTheme: GeyamTheme.dark,
+        themeMode: themeProvider.mode,
+        routerConfig: _router,
+        builder: _materialBuilder(),
+      );
+    }
+    return MaterialApp(
+      title: 'GEYAM POS',
+      debugShowCheckedModeBanner: false,
+      theme: GeyamTheme.light,
+      darkTheme: GeyamTheme.dark,
+      themeMode: themeProvider.mode,
+      home: _initialScreen(),
+      builder: _materialBuilder(),
     );
   }
 }
