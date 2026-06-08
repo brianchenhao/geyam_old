@@ -4,11 +4,10 @@ name: Build + deploy Flutter web to geyam.com (Hostinger)
 # workflow. Builds Flutter Web with the prod API URL baked in, then SFTPs
 # build/web/ into Hostinger's public_html/ for the geyam.com slot.
 #
-# Required GitHub Secrets:
-#   HOSTINGER_GEYAM_SFTP_HOST  — e.g. "ftp.geyam.com" or the IP Hostinger gave you
-#   HOSTINGER_GEYAM_SFTP_USER  — Hostinger SFTP username
-#   HOSTINGER_GEYAM_SFTP_PASS  — Hostinger SFTP password
-#   HOSTINGER_GEYAM_SFTP_PORT  — optional, defaults to 22
+# Required GitHub Secrets (FTPS over port 21, works on every Hostinger plan):
+#   HOSTINGER_GEYAM_FTP_HOST  — e.g. "ftp.geyam.com" (hpanel → Files → FTP Accounts)
+#   HOSTINGER_GEYAM_FTP_USER  — Hostinger FTP username
+#   HOSTINGER_GEYAM_FTP_PASS  — Hostinger FTP password
 #
 # Hostinger needs an SPA fallback (404 → /index.html) configured separately in
 # the panel (htaccess or "Manage SPA" toggle), otherwise refreshing /pricing or
@@ -52,17 +51,21 @@ jobs:
         # without any runtime config file.
         run: flutter build web --release --base-href / --dart-define=API_BASE_URL=https://api.geyam.com
 
-      - name: SFTP build/web/ → Hostinger public_html/
+      - name: FTPS build/web/ → Hostinger public_html/
+        # Plain FTP wire protocol upgraded to FTPS via ssl-allow=yes — Hostinger
+        # advertises FTPS on every plan (port 21), so this works where SFTP
+        # (which is plan-restricted) does not. Credentials stay encrypted in
+        # transit via TLS.
         uses: pressidium/lftp-mirror-action@v1
         with:
-          host: ${{ secrets.HOSTINGER_GEYAM_SFTP_HOST }}
-          port: ${{ secrets.HOSTINGER_GEYAM_SFTP_PORT || 22 }}
-          user: ${{ secrets.HOSTINGER_GEYAM_SFTP_USER }}
-          pass: ${{ secrets.HOSTINGER_GEYAM_SFTP_PASS }}
-          # lftp mirror flags: -R upload, --delete prunes stale files, --verbose
-          # for visible progress in the action log. Local must end with /.
+          host: ${{ secrets.HOSTINGER_GEYAM_FTP_HOST }}
+          port: 21
+          user: ${{ secrets.HOSTINGER_GEYAM_FTP_USER }}
+          pass: ${{ secrets.HOSTINGER_GEYAM_FTP_PASS }}
+          # ssl-allow=yes turns plain FTP into FTPS (TLS-wrapped FTP).
+          # ssl-protect-data=yes encrypts the data channel too, not just auth.
           onlyNewer: true
-          settings: 'sftp:auto-confirm=yes'
+          settings: 'ftp:ssl-allow=yes;ftp:ssl-protect-data=yes;ftp:passive-mode=yes'
           localDir: 'frontend/geyam_pos/build/web/'
           remoteDir: 'public_html/'
           options: '--reverse --delete --verbose'
